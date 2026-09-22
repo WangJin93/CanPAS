@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+Rplots.pdf
+*.tar.gz
+*.Rcheck/
+.DS_Store
+src/*.o
+src/*.so

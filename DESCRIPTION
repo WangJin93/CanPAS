@@ -1,0 +1,52 @@
+Package: CanPAS
+Type: Package
+Title: Cancer Prognosis Analysis Suite
+Version: 1.0.0
+Authors@R: person("CanPAS", "Team", email = "cpas@example.org", role = c("aut", "cre"))
+Description: A survival-analysis toolkit for public cancer cohorts. It serves
+    expression matrices and survival tables from a curated GEO/CGGA mirror over
+    a public REST API and from TCGA through UCSC Xena with local clinical
+    tables, and exposes one uniform "merged data" schema. Endpoints are requested
+    by family (OS, DSS, DFS, PFS, MFS), and the token a cohort actually reports is
+    resolved per cohort and returned with every result, so cohorts are never
+    pooled across families. Functions cover gene and signature scoring,
+    Kaplan-Meier and cut-point analysis, univariable and multivariable Cox
+    models, time-dependent ROC, cross-cohort random-effects meta-analysis, pooled
+    Kaplan-Meier with a prediction interval, and competing risks, with five
+    statistical safeguards disclosed by default. A bundled Shiny application
+    drives the same exported functions.
+License: GPL-3
+URL: https://github.com/WangJin93/CanPAS
+BugReports: https://github.com/WangJin93/CanPAS/issues
+Encoding: UTF-8
+LazyData: true
+Depends: R (>= 4.0.0)
+Imports:
+    dplyr,
+    ggplot2,
+    ggtext,
+    gridExtra,
+    jsonlite,
+    survival,
+    survminer,
+    survivalROC,
+    flextable
+Suggests:
+    knitr,
+    maxstat,
+    patchwork,
+    cmprsk,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    UCSCXenaShiny,
+    UCSCXenaTools,
+    shiny,
+    DT,
+    shinythemes,
+    bs4Dash,
+    shinyWidgets,
+    shinycssloaders,
+    commonmark,
+    markdown
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0
