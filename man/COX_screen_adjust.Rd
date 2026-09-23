@@ -31,7 +31,10 @@ layout, including \code{type}).}
 List with:
   \item{\code{result}:}{long data.frame with univariate and (if available)
     multivariate HR/CI/p per covariate and level}
-  \item{\code{print_result}:}{a \code{flextable} of \code{result}, formatted
+  \item{\code{print_result}:}{a \code{flextable} of \code{result} (a three-line
+    table ready for \code{flextable::save_as_docx()}) when the suggested
+    \pkg{flextable} package is installed, otherwise the plain \code{data.frame}
+    with the same numbers, formatted
     as a three-line table (top rule, rule under the header, bottom rule) with
     the univariable and multivariable columns grouped under their own header
     row, ready for \code{flextable::save_as_docx()} or printing}

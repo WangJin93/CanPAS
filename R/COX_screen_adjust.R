@@ -15,7 +15,10 @@
 #' @return List with:
 #'   \item{\code{result}:}{long data.frame with univariate and (if available)
 #'     multivariate HR/CI/p per covariate and level}
-#'   \item{\code{print_result}:}{a \code{flextable} of \code{result}, formatted
+#'   \item{\code{print_result}:}{a \code{flextable} of \code{result} (a three-line
+#'     table ready for \code{flextable::save_as_docx()}) when the suggested
+#'     \pkg{flextable} package is installed, otherwise the plain \code{data.frame}
+#'     with the same numbers, formatted
 #'     as a three-line table (top rule, rule under the header, bottom rule) with
 #'     the univariable and multivariable columns grouped under their own header
 #'     row, ready for \code{flextable::save_as_docx()} or printing}
@@ -126,27 +129,35 @@ COX_screen_adjust <- function(df, type = "OS",
   typology <- data.frame(key = key, what = what, measure = measure,
                          stringsAsFactors = FALSE)
 
-  ft <- flextable::flextable(display)
-  ft <- flextable::set_header_df(ft, mapping = typology, key = "key")
-  ft <- flextable::merge_h(ft, part = "header")
-  ft <- flextable::merge_v(ft, j = "Variates", part = "header")
-  ft <- flextable::align(ft, align = "center", part = "all")
-  ft <- flextable::autofit(ft)
-  # three-line table (三线表): a top rule, a rule under the header block and a
-  # bottom rule, and nothing else. The flextable default left every border at
-  # '0 solid', i.e. no rules at all, which is not a printable table.
-  ft <- flextable::border_remove(ft)
-  ft <- flextable::hline_top(ft, part = "header",
-                             border = flextable::fp_border_default(width = 1.5, color = "black"))
-  ft <- flextable::hline_bottom(ft, part = "header",
-                                border = flextable::fp_border_default(width = 0.75, color = "black"))
-  ft <- flextable::hline_bottom(ft, part = "body",
-                                border = flextable::fp_border_default(width = 1.5, color = "black"))
-  ft <- flextable::align(ft, j = "Variates", align = "left", part = "all")
-  ft <- flextable::padding(ft, padding = 4, part = "all")
+  ## "flextable" is a Suggests, not an Imports: the three-line table is a
+  ## convenience for Word/HTML export, and a plain data.frame carries the same
+  ## numbers when the package is not installed (the app renders it as a table).
+  if (requireNamespace("flextable", quietly = TRUE)) {
+    ft <- flextable::flextable(display)
+    ft <- flextable::set_header_df(ft, mapping = typology, key = "key")
+    ft <- flextable::merge_h(ft, part = "header")
+    ft <- flextable::merge_v(ft, j = "Variates", part = "header")
+    ft <- flextable::align(ft, align = "center", part = "all")
+    ft <- flextable::autofit(ft)
+    # three-line table (三线表): a top rule, a rule under the header block and a
+    # bottom rule, and nothing else. The flextable default left every border at
+    # '0 solid', i.e. no rules at all, which is not a printable table.
+    ft <- flextable::border_remove(ft)
+    ft <- flextable::hline_top(ft, part = "header",
+                               border = flextable::fp_border_default(width = 1.5, color = "black"))
+    ft <- flextable::hline_bottom(ft, part = "header",
+                                  border = flextable::fp_border_default(width = 0.75, color = "black"))
+    ft <- flextable::hline_bottom(ft, part = "body",
+                                  border = flextable::fp_border_default(width = 1.5, color = "black"))
+    ft <- flextable::align(ft, j = "Variates", align = "left", part = "all")
+    ft <- flextable::padding(ft, padding = 4, part = "all")
+    print_result <- ft
+  } else {
+    print_result <- display
+  }
 
   list(result = out,
-       print_result = ft,
+       print_result = print_result,
        sig_variates = sig_vars,
        uni_table = u,
        multi_table = if (!is.null(multi)) multi$results_table else NULL,

@@ -161,10 +161,17 @@ test_that("COX_screen_adjust reports a reduced multivariate model", {
   expect_true(isTRUE(r$multi_metadata$reduced))
   expect_length(r$multi_metadata$final_covariates, 1L)
   expect_true(nrow(r$multi_table) >= 1L)
-  expect_s3_class(r$print_result, "flextable")
+  ## flextable is a suggested package: with it the summary table is a flextable,
+  ## without it the same numbers come back as a plain data.frame
+  if (requireNamespace("flextable", quietly = TRUE)) {
+    expect_s3_class(r$print_result, "flextable")
+  } else {
+    expect_s3_class(r$print_result, "data.frame")
+  }
 })
 
 test_that("the printed summary table is a three-line table", {
+  skip_if_not_installed("flextable")
   d <- sim_multi(n = 300, seed = 12)
   r <- suppressMessages(suppressWarnings(
     COX_screen_adjust(d, type = "OS", cont_Variates = c("marker", "age"),

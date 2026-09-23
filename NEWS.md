@@ -4,12 +4,27 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Licence change to MIT, `flextable` made optional, author metadata
+
+* The package is now licensed **MIT** (`License: MIT + file LICENSE`; full text in
+  `LICENSE.md`), replacing GPL-3. The motivation is reuse: MIT allows modification and
+  closed-source derivatives, while GPL-3 already allowed modification but required
+  derivatives to stay GPL-3. `COPYING` (the GPL-3 text) was removed.
+* `Authors@R` now names the author and maintainer (**Jin Wang**,
+  <Jinwang93@suda.edu.cn>), replacing the placeholder team entry.
+* `flextable` moved from `Imports` to `Suggests`: the three-line summary table of the
+  Cox page is still a `flextable` when the package is installed, and falls back to the
+  plain data frame with the same numbers otherwise (the app renders it as a table and
+  offers the CSV download; the Word download explains that `flextable` is needed).
+* README licence/dependency sections updated.
+
 ## Publication preparation: repository URL, licence file, no personal default path
 
 * `DESCRIPTION` now carries `URL` and `BugReports` pointing at the public repository
   (`https://github.com/WangJin93/CanPAS`) and a rewritten `Description` that names the
   endpoint-family/token resolution, the default-visible safeguards and the bundled app.
-* The full GPL-3 text is shipped as `COPYING`, matching `License: GPL-3`.
+* `COPYING` (the full GPL-3 text) was shipped at that point; it was removed in the
+  licence change below, when the package moved to MIT.
 * The `CPAS_DATA_ROOT` fallback no longer hard-codes a developer's home directory: it
   defaults to an empty value, and the TCGA helpers stop with instructions naming the
   variable and the expected `<root>/data/tcga/*.rda` files. Set the variable before

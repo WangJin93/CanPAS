@@ -450,7 +450,8 @@ server_mod_cox <- function(id, rv, dataset_info) {
                      sum(r$df[[paste0(r$ep, "_status")]] == 1, na.rm = TRUE), r$p_thr,
                      if (is.null(r$multi)) "none reached the threshold" else
                        paste(intersect(r$selected, c(r$screen$cont_Variates, r$screen$cate_Variates)), collapse = ", "))
-      flextable::set_caption(ft, caption = cap)
+      ## flextable is optional: without it print_result is a plain data.frame
+      if (inherits(ft, "flextable")) flextable::set_caption(ft, caption = cap) else ft
     }
 
     output$print_note <- renderUI({
@@ -479,7 +480,11 @@ server_mod_cox <- function(id, rv, dataset_info) {
       if (is.null(r)) return(NULL)
       ft <- print_ft()
       if (is.null(ft)) return(div(class = "note", "No table yet."))
-      div(style = "overflow-x:auto;", flextable::htmltools_value(ft))
+      if (inherits(ft, "flextable"))
+        return(div(style = "overflow-x:auto;", flextable::htmltools_value(ft)))
+      ## fallback: the same numbers as a plain table when flextable is absent
+      div(style = "overflow-x:auto;",
+          DT::datatable(ft, rownames = FALSE, options = list(dom = "t", scrollX = TRUE)))
     })
 
     output$dl_print_docx <- downloadHandler(
@@ -490,6 +495,11 @@ server_mod_cox <- function(id, rv, dataset_info) {
         ft <- print_ft()
         if (is.null(ft)) {
           showNotification("No table to download - run the analysis first.", type = "warning"); return(NULL)
+        }
+        if (!inherits(ft, "flextable")) {
+          showNotification(paste("Install the 'flextable' package to download the Word table;",
+                                 "the CSV download works without it."), type = "warning", duration = 8)
+          return(NULL)
         }
         flextable::save_as_docx(ft, path = file)
       })

@@ -2,7 +2,8 @@ Package: CanPAS
 Type: Package
 Title: Cancer Prognosis Analysis Suite
 Version: 1.0.0
-Authors@R: person("CanPAS", "Team", email = "cpas@example.org", role = c("aut", "cre"))
+Authors@R: person("Jin", "Wang", email = "Jinwang93@suda.edu.cn",
+    role = c("aut", "cre"))
 Description: A survival-analysis toolkit for public cancer cohorts. It serves
     expression matrices and survival tables from a curated GEO/CGGA mirror over
     a public REST API and from TCGA through UCSC Xena with local clinical
@@ -15,7 +16,7 @@ Description: A survival-analysis toolkit for public cancer cohorts. It serves
     Kaplan-Meier with a prediction interval, and competing risks, with five
     statistical safeguards disclosed by default. A bundled Shiny application
     drives the same exported functions.
-License: GPL-3
+License: MIT + file LICENSE
 URL: https://github.com/WangJin93/CanPAS
 BugReports: https://github.com/WangJin93/CanPAS/issues
 Encoding: UTF-8
@@ -29,9 +30,9 @@ Imports:
     jsonlite,
     survival,
     survminer,
-    survivalROC,
-    flextable
+    survivalROC
 Suggests:
+    flextable,
     knitr,
     maxstat,
     patchwork,

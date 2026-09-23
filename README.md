@@ -47,6 +47,7 @@ install.packages("CanPAS_1.0.0.tar.gz", repos = NULL, type = "source")
 |---|---|
 | `shiny`, `DT`, `bs4Dash`, `shinyWidgets`, `shinycssloaders` | the bundled application |
 | `UCSCXenaShiny`, `UCSCXenaTools` | TCGA expression through UCSC Xena |
+| `flextable` | three-line summary table in the Cox page and its Word export (without it the app shows the same table and offers CSV) |
 | `maxstat` | search-adjusted approximate p-value for the cut-point search |
 | `patchwork` | composing both pooling routes into one figure |
 | `cmprsk` | independent Fine–Gray reference in the test suite |
@@ -55,7 +56,7 @@ install.packages("CanPAS_1.0.0.tar.gz", repos = NULL, type = "source")
 install.packages(c("dplyr", "ggplot2", "ggtext", "gridExtra", "jsonlite",
                    "survival", "survminer", "survivalROC", "flextable"))
 install.packages(c("shiny", "DT", "bs4Dash", "shinyWidgets", "shinycssloaders",
-                   "maxstat", "patchwork", "cmprsk"))
+                   "flextable", "maxstat", "patchwork", "cmprsk"))
 ```
 
 ## Configuration
@@ -266,8 +267,12 @@ A tool paper accompanies this release; until it has a DOI, cite the package vers
 > CanPAS: Cancer Prognosis Analysis Suite. R package version 1.0.0.
 > https://github.com/WangJin93/CanPAS
 
-Licence: **GPL-3** (see `COPYING`). Cohort data remain the property of the original
-studies — cite the GEO/CGGA/TCGA accessions alongside any result.
+Licence: **MIT** (see `LICENSE`), so the code can be reused and modified freely,
+including in closed-source derivatives. CanPAS is developed by **Jin Wang**, Soochow
+University (<Jinwang93@suda.edu.cn>). Note that some optional features rely on
+GPL-licensed packages (`survminer`, `ggtext`, `survivalROC`, `gridExtra`, `flextable`),
+which keep their own licences when installed. Cohort data remain the property of the
+original studies — cite the GEO/CGGA/TCGA accessions alongside any result.
 
 ## Reporting problems
 
