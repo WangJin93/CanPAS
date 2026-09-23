@@ -18,6 +18,17 @@ bundled Shiny application; this section documents the state of that first releas
   offers the CSV download; the Word download explains that `flextable` is needed).
 * README licence/dependency sections updated.
 
+## Catalog: endpoint-less cohorts removed entirely (152 -> 136 rows)
+
+The thirteen rows listed below were removed first, and the three remaining unannotated rows
+(GSE40272_GPL15971, GSE40272_GPL15972, GSE40272_GPL9497 - the prostate platform rows whose
+DFS event counts are 2, 2 and 3) were removed in the same pass, so the catalog now contains
+**no cohort without an endpoint annotation**. The tool therefore ships 136 cohorts
+(118 GEO, 15 TCGA projects, 3 CGGA) across the same 14 cancer types, with the endpoint
+families (OS 97, DSS 22, DFS 78, PFS 23, MFS 14), the 28,890 analysable samples and the
+136 endpoint-annotated cohorts unchanged; the overlap structure is 26 pairs in 13 groups.
+GSE40272_GPL15973 (DFS, 40 analysable samples, 10 events) remains as the prostate cohort.
+
 ## Catalog: 13 endpoint-less cohorts removed
 
 Thirteen catalogue rows that carried no endpoint annotation were dropped from the catalog
