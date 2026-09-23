@@ -18,6 +18,22 @@ bundled Shiny application; this section documents the state of that first releas
   offers the CSV download; the Word download explains that `flextable` is needed).
 * README licence/dependency sections updated.
 
+## Catalog expanded with 16 TCGA projects (136 -> 152 rows)
+
+Sixteen TCGA projects that were present in the local clinical/survival tables but had never
+been catalogued are now first-class cohorts, all with more than 50 analysable samples:
+KIRC (603), THCA (571), HNSC (563), SKCM (456), KIRP (320), SARC (264), ESCA (195),
+UCEC (193), PCPG (185), TGCT (137), THYM (120), KICH (89), MESO (86), UVM (79), ACC (77)
+and UCS (57). This brings the catalog to 152 cohorts across 28 cancer types
+(118 GEO, 31 TCGA, 3 CGGA), with endpoint families OS 113, DSS 38,
+DFS 91, PFS 39, MFS 14; two projects were held back because they fall below the
+threshold (CHOL 45, DLBC 47 OS samples). The per-project tables were generated with the
+exact layout and clinical conventions of the existing TCGA tables - the generator reproduces
+all fifteen pre-existing TCGA tables cell-by-cell (0 differences across 13 columns) - and
+`data(dataset_info)` was rebuilt and verified against the CSV cell-by-cell (0 differences).
+Note that TCGA cohorts are served from `data/tcga/*.rda` plus on-demand expression, so the
+mirror still holds no TCGA tables by design.
+
 ## Catalog: endpoint-less cohorts removed entirely (152 -> 136 rows)
 
 The thirteen rows listed below were removed first, and the three remaining unannotated rows
