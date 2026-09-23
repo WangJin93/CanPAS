@@ -19,7 +19,7 @@ What it adds to the usual single-cohort workflow:
 * **Numerical verification against reference implementations** (`survival`, `metafor`,
   `cmprsk`), including a competing-risks variance defect that the comparison exposed
   and this release corrects.
-* **A catalog, not just a downloader**: 152 catalogued cohorts in one schema, with
+* **A catalog, not just a downloader**: 139 catalogued cohorts in one schema, with
   sample sizes defined as analysable patients and with patient-overlap groups recorded.
 
 > Naming note: the package was originally created under the name "Cancer Patient
@@ -125,11 +125,11 @@ run_cpas_app()
 ## The catalog
 
 `data(dataset_info)` ships the catalog used by the app and by the paper:
-**152 cohorts — 134 GEO, 15 TCGA projects, 3 CGGA — across 14 cancer types**, of which
+**139 cohorts — 121 GEO, 15 TCGA projects, 3 CGGA — across 14 cancer types**, of which
 136 carry a resolved endpoint and together contribute **28,890 analysable samples**
 (median 165 per cohort). Sample size means analysable patients: expression data plus a
 non-missing time and status for the cohort's primary endpoint. Patient-overlap groups
-are recorded (52 pairs in 17 groups), and the multi-dataset pages warn when a selection
+are recorded (32 pairs in 14 groups), and the multi-dataset pages warn when a selection
 contains two members of one group.
 
 ## Endpoint families

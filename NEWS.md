@@ -18,6 +18,23 @@ bundled Shiny application; this section documents the state of that first releas
   offers the CSV download; the Word download explains that `flextable` is needed).
 * README licence/dependency sections updated.
 
+## Catalog: 13 endpoint-less cohorts removed
+
+Thirteen catalogue rows that carried no endpoint annotation were dropped from the catalog
+(152 -> 139 rows; GEO 134 -> 121, TCGA 15 and CGGA 3 unchanged; 14 cancer types unchanged):
+GSE10885_GPL5325, GSE10885_GPL885, GSE1378, GSE1379, GSE20624_GPL5325, GSE20624_GPL885,
+GSE20624_GPL887, GSE22226_GPL4133, GSE35629_GPL1390, GSE35629_GPL5325, GSE35629_GPL887,
+GSE32062_GPL570 and GSE14520_GPL571. They are either reference-array submissions with no
+clinical annotation at all, or platform subsets of series whose patients are already
+represented by other catalog rows (GSE10885/GSE20624/GSE35629 are the same breast
+tissue-bank series deposited repeatedly, and GSE1378/GSE1379 are the same 60 patients
+measured twice). Nothing analysis-facing changes: the endpoint families and their cohort
+counts (OS 97, DSS 22, DFS 78, PFS 23, MFS 14), the 136 cohorts with a resolved endpoint,
+the 28,890 analysable samples and the overlap structure among the remaining rows
+(32 pairs in 14 groups) are unaffected except for the removal of pairs that involved these
+rows. The three remaining unannotated rows are the GSE40272 prostate platform rows, whose
+DFS event counts (2, 2 and 3) stay below the five-event annotation rule.
+
 ## Publication preparation: repository URL, licence file, no personal default path
 
 * `DESCRIPTION` now carries `URL` and `BugReports` pointing at the public repository
