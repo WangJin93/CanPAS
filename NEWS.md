@@ -6,8 +6,8 @@ bundled Shiny application; this section documents the state of that first releas
 
 ## Licence change to MIT, `flextable` made optional, author metadata
 
-* The package is now licensed **MIT** (`License: MIT + file LICENSE`; full text in
-  `LICENSE.md`), replacing GPL-3. The motivation is reuse: MIT allows modification and
+* The package is now licensed **MIT** (`License: MIT + file LICENSE`; the full MIT text is in
+  `LICENSE.md`, next to the two-field `LICENSE` stub R expects), replacing GPL-3. The motivation is reuse: MIT allows modification and
   closed-source derivatives, while GPL-3 already allowed modification but required
   derivatives to stay GPL-3. `COPYING` (the GPL-3 text) was removed.
 * `Authors@R` now names the author and maintainer (**Jin Wang**,
