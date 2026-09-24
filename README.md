@@ -19,7 +19,7 @@ What it adds to the usual single-cohort workflow:
 * **Numerical verification against reference implementations** (`survival`, `metafor`,
   `cmprsk`), including a competing-risks variance defect that the comparison exposed
   and this release corrects.
-* **A catalog, not just a downloader**: 177 catalogued cohorts in one schema, with
+* **A catalog, not just a downloader**: 179 catalogued cohorts in one schema, with
   sample sizes defined as analysable patients and with patient-overlap groups recorded.
 
 > Naming note: the package was originally created under the name "Cancer Patient
@@ -125,12 +125,15 @@ run_cpas_app()
 ## The catalog
 
 `data(dataset_info)` ships the catalog used by the app and by the paper:
-**177 cohorts — 141 GEO, 31 TCGA projects, 3 CGGA and 2 cBioPortal-hosted studies — across
+**179 cohorts — 143 GEO, 31 TCGA projects, 3 CGGA and 2 cBioPortal-hosted studies — across
 29 cancer types**, and every row carries a resolved endpoint; together they contribute
-**37,052 analysable samples** (median 163 per cohort, range 36–1,210). The two
+**37,121 analysable samples** (median 161 per cohort, range 34–1,210). The two
 cBioPortal-hosted cohorts (A5-PCPG, Pheochromocytoma; IMmotion150, Kidney Cancer) are
 studies whose clinical and expression files are deposited together, not GEO series, so they
-are counted in their own bucket and the GEO count is 141 rather than 143. Sample size means
+are counted in their own bucket and the GEO count is 143 rather than 145. A small number of
+cohorts carry only 30–40 patients and are flagged as such in the catalog `Note` field (the
+admission gate was relaxed from > 50 to >= 30 patients per cohort for these additions).
+Sample size means
 analysable patients:
 expression data plus a non-missing time and status for the cohort's primary endpoint.
 Patient-overlap groups are recorded (29 pairs in 13 groups recomputed against this
@@ -150,17 +153,17 @@ cohort and always reported.
 
 | Family | Tokens pooled | Cohorts |
 |---|---|---|
-| OS | OS | 125 |
+| OS | OS | 128 |
 | DSS | DSS, CSS, BCSS | 39 |
-| DFS | DFS, RFS, EFS, DFI | 93 |
-| PFS | PFS, PFI | 44 |
+| DFS | DFS, RFS, EFS, DFI | 94 |
+| PFS | PFS, PFI | 45 |
 | MFS | MFS, DRFS | 17 |
 
 `DFI` and `PFI` (TCGA) are derived from the original endpoint fields and are flagged as
 derived. Pooling inside a family and never across families is enforced by the package;
 a mixed-token pool warns, naming each cohort and its token. A separate browsing
 vocabulary widens the progression family to metastasis endpoints, so the Datasets page
-can show a PFS cohort count (61) larger than the pooling count (44).
+can show a PFS cohort count (62) larger than the pooling count (45).
 
 ## Statistical safeguards (read before quoting a result)
 
@@ -201,12 +204,14 @@ overlap warning and the caveats.
 
 | Source | Expression | Survival / clinical |
 |---|---|---|
-| GEO (140 cohorts) | CanPAS MySQL mirror over a public REST API | mirror table `<ACC>_surv` |
+| GEO (143 cohorts) | CanPAS MySQL mirror over a public REST API | mirror table `<ACC>_surv` |
 | CGGA (3 glioma cohorts) | mirror | mirror table `CGGA_<ID>_surv` |
 | TCGA (31 projects) | UCSC Xena, fetched per gene on demand | local `<CPAS_DATA_ROOT>/data/tcga/*.rda` |
+| cBioPortal-hosted (2 studies) | mirror (RNA-seq deposited with the study) | same studies' clinical files, loaded as local survival tables |
 
 Cohort data remain the property of the original studies: cite the GEO/CGGA/TCGA
-accessions listed in `dataset_info` alongside any result.
+accessions listed in `dataset_info` alongside any result. The two cBioPortal-hosted
+studies are counted in their own source bucket, not as GEO.
 
 ## Caching of remote fetches
 

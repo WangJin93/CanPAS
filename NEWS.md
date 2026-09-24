@@ -4,6 +4,41 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Catalog expanded to 179 rows: two small cohorts admitted under a relaxed gate
+
+Two small cohorts were added under an admission gate the author relaxed from **> 50 to
+>= 30 patients per cohort**; both are flagged as such in the catalog `Note` field
+(`small cohort: N=34; gate relaxed to >=30 per author` and the N=35 analogue). They are
+the only catalog rows below 50 patients.
+
+* **GSE76019** (Adrenocortical Cancer, N = 34, 12 EFS events). Expression from GEO
+  GSE76019 on GPL13158 (already log-scale) and clinical from the same series'
+  `!Sample_characteristics_ch1` (`efs.time` in years, `efs.event`). Only EFS is
+  registered: the series carries no OS or DSS. The `EFS` token maps to the DFS family
+  through the existing rule in `11_endpoint_families.R`, which was not changed. This is
+  the paediatric COG ARAR0332 cohort (PMID 27307598).
+* **GSE76039** (Thyroid Cancer, N = 35, 29 OS deaths). One study split across two
+  deposits: expression from GEO GSE76039 on GPL570, and clinical from the same study's
+  cBioPortal archive `thyroid_mskcc_2016` (poorly differentiated / anaplastic thyroid
+  cancer, MSK, JCI 2016, PMID 26878173), joined on `!Sample_title` against
+  `SAMPLE_ID` and cross-checked against `OTHER_SAMPLE_ID` (37/37 matched both ways).
+  This is the same expression-plus-publication-table pattern as the earlier GSE3218
+  build.
+
+The catalog now holds **179 cohorts across 29 cancer types** (143 GEO, 31 TCGA,
+3 CGGA and 2 cBioPortal-hosted studies, the last counted in their own bucket rather
+than as GEO), endpoint families **OS 128 / DSS 39 / DFS 94 / PFS 45 / MFS 17** (counts
+of non-NA `EP_*`; DFS now carries two `EFS` tokens) and **37,121 analysable samples**
+(median 161 per cohort, range 34–1,210). `16_verify_catalog_mirror.R` reports
+0 errors / 0 warnings / 0 info; `data(dataset_info)` was rebuilt and verified
+cell-by-cell against the CSV (179 x 26 cells, 0 differences), and
+`19_fix_catalog_N.R` was not run. The three still-open cancer types are unchanged:
+Endometrial Cancer (best route 29 patients, one short of the gate), Uterine
+Carcinosarcoma (time and status only inside KM figures) and Thymoma (no time-and-status
+pair anywhere). The patient-overlap register is unchanged by this batch: recomputing it
+with `pipeline/R/26_cohort_overlap.R` (dry run) against the 179-row catalog still gives
+**29 pairs in 13 groups** among 32 cohorts.
+
 ## Catalog expanded to 177 rows: three cohorts closing three cancer types
 
 Three cohorts built through the supplementary/bespoke route were added, each the first
