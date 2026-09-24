@@ -471,17 +471,28 @@
   sprintf("%s (%s family)", token, df_family)
 }
 
-# Source of a cohort: GEO / CGGA / TCGA / cBioPortal-hosted ------------------
-# The accession prefix decides the bucket. The catalog holds four groups:
-# GSE* (143), TCGA-* (31), CGGA* (3) and two studies that are none of the three
-# because their clinical (and expression) files were deposited with the study on
-# cBioPortal, not as a GEO series (A5-PCPG, IMmotion150). Folding those two into
-# GEO would misreport both the count and the link, so they are their own bucket.
+# Source of a cohort: GEO / EMBL-EBI / CGGA / TCGA / cBioPortal-hosted --------
+# The accession prefix decides the bucket. The catalog holds FIVE groups:
+# GSE* (143), E-* (14: ArrayExpress/BioStudies deposits such as E-MTAB-1727),
+# TCGA-* (31), CGGA* (3) and two studies that are none of these because their
+# clinical (and expression) files were deposited with the study on cBioPortal,
+# not as a GEO series (A5-PCPG, IMmotion150). Folding the EMBL-EBI cohorts into
+# GEO, or the cBioPortal pair into either, would misreport both the count and
+# the source link, so each is its own bucket.
 .cohort_source <- function(acc) {
   acc <- as.character(acc)
   ifelse(startsWith(acc, "TCGA-"), "TCGA",
          ifelse(startsWith(acc, "CGGA"), "CGGA",
-                ifelse(startsWith(acc, "GSE"), "GEO", "cBioPortal")))
+                ifelse(startsWith(acc, "GSE"), "GEO",
+                       ifelse(startsWith(acc, "E-"), "EMBL-EBI", "cBioPortal"))))
+}
+
+# EMBL-EBI cohorts live in ArrayExpress/BioStudies; the accession is enough to
+# build the BioStudies landing page (E-MTAB-1727 -> S-BSST or the ArrayExpress
+# experiment page, which redirects).
+.cohort_link_embl <- function(acc) {
+  sprintf('<a href="https://www.ebi.ac.uk/biostudies/arrayexpress/studies/%s" target="_blank">ArrayExpress</a>',
+          as.character(acc))
 }
 
 # cBioPortal study URL of a cohort that is neither GEO, TCGA nor CGGA. The study
@@ -509,7 +520,9 @@
                 sprintf('<a href="http://www.cgga.org.cn/" target="_blank">CGGA</a>'),
                 ifelse(src == "GEO",
                        sprintf('<a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=%s" target="_blank">NCBI</a>', acc),
-                       .cohort_link_cbioportal(acc))))
+                       ifelse(src == "EMBL-EBI",
+                              .cohort_link_embl(acc),
+                              .cohort_link_cbioportal(acc)))))
 }
 
 # Families a cohort provides, in the canonical family order --------------

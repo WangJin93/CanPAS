@@ -176,13 +176,16 @@ used as a time-to-event endpoint, and a token with (almost) no events (OS in
 - **Cancer type** labels are title-cased (`Lung Cancer`, `Multiple Myeloma`) and
   are the grouping key of the Multi-datasets page.
 - **Source** is derived from the accession prefix: `TCGA-*` → TCGA, `CGGA*` →
-  CGGA, `GSE*` → GEO, everything else → **cBioPortal-hosted**. That fourth bucket
-  holds the two studies whose clinical and expression files were deposited with
-  the study on cBioPortal instead of as a GEO series (`A5-PCPG`,
-  Pheochromocytoma; `IMmotion150`, Kidney Cancer). The four buckets are
-  GEO 143 / TCGA 31 / CGGA 3 / cBioPortal-hosted 2 = 179 cohorts. The Datasets
-  page shows the source and links to the matching portal (NCBI GEO / CGGA / GDC /
-  cBioPortal).
+  CGGA, `GSE*` → GEO, `E-*` → **EMBL-EBI**, everything else → **cBioPortal-hosted**.
+  The EMBL-EBI bucket holds the fourteen ArrayExpress/BioStudies deposits
+  (`E-MTAB-*`, `E-TABM-*`, `E-MEXP-*`) retrieved from their own SDRF annotation
+  and processed matrices rather than through GEO; the cBioPortal bucket holds the
+  two studies whose clinical and expression files were deposited with the study
+  on cBioPortal instead of as a GEO series (`A5-PCPG`, Pheochromocytoma;
+  `IMmotion150`, Kidney Cancer). The five buckets are GEO 143 / EMBL-EBI 14 /
+  TCGA 31 / CGGA 3 / cBioPortal-hosted 2 = 193 cohorts. The Datasets page shows
+  the source and links to the matching portal (NCBI GEO / ArrayExpress / CGGA /
+  GDC / cBioPortal).
 - **Endpoint columns**: `SurvivalTypes` holds the raw tokens, `EndpointFamilies`
   the families a cohort can be pooled under, and `EP_OS`/`EP_DSS`/`EP_DFS`/`EP_PFS`/
   `EP_MFS` the token the cohort contributes to each family (NA when absent).
@@ -194,13 +197,13 @@ separately with its cohort count:
 
 | Filter | Meaning | Cohorts |
 |---|---|---|
-| Any | no family filter | 179 |
-| OS | overall survival | 128 |
+| Any | no family filter | 193 |
+| OS | overall survival | 139 |
 | DSS | disease-specific survival (DSS / CSS / BCSS) | 39 |
-| DFS | disease-free survival (DFS / RFS / EFS / DFI) | 94 |
-| PFS | progression-free survival (PFS / PFI) | 45 |
+| DFS | disease-free survival (DFS / RFS / EFS / DFI) | 95 |
+| PFS | progression-free survival (PFS / PFI) | 47 |
 | MFS | metastasis-free survival (MFS / DRFS) | 17 |
-| PFS or MFS | the broader "no progression / no metastasis" view | 62 |
+| PFS or MFS | the broader "no progression / no metastasis" view | 64 |
 
 The **Endpoint families** column shows, per cohort, the family and the token it
 contributes — `DFS (RFS), MFS`, `MFS (DRFS)`, `DFS (DFI) [derived]` — i.e. the

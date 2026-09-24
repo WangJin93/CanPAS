@@ -9,9 +9,10 @@
 "ID_map"
 
 #' @title CanPAS dataset catalog
-#' @description One row per cohort in the CanPAS catalog — 179 rows: 143 GEO
-#' series, 31 TCGA projects, 3 CGGA glioma cohorts and 2 cBioPortal-hosted
-#' studies (`A5-PCPG`, `IMmotion150`) — with the accession, platform (GPL),
+#' @description One row per cohort in the CanPAS catalog — 193 rows: 143 GEO
+#' series, 14 EMBL-EBI cohorts (ArrayExpress/BioStudies), 31 TCGA projects,
+#' 3 CGGA glioma cohorts and 2 cBioPortal-hosted studies (`A5-PCPG`,
+#' `IMmotion150`) — with the accession, platform (GPL),
 #' cancer type and the endpoint / sample-size columns described below. Used by
 #' \code{\link{get_expr_data}} to find the platform of a dataset.
 #' @docType data
@@ -22,8 +23,12 @@
 #' \code{EP_MFS} (the concrete token available for each pooling family),
 #' \code{EndpointPrimary} and \code{EndpointDerived} (TCGA-derived DFI/PFI).
 #'
-#' Sample-size columns (recomputed from the mirror; see
-#' \code{pipeline/R/19_fix_catalog_N.R}):
+#' Sample-size columns. The delivered local artefacts under \code{data/} are the
+#' authoritative layer; the mirror and this packaged object are downstream copies
+#' of it, checked against it by \code{pipeline/R/16_verify_catalog_mirror.R}.
+#' \code{n_surv} is the row count of the delivered survival table and
+#' \code{n_events} the primary endpoint's events among those \code{N} analysable
+#' samples, so it is not the event total of the survival table:
 #' \describe{
 #'   \item{\code{N}}{Analysable sample count: samples with both expression data
 #'     in the mirror and non-missing \code{time} and \code{status} for the
@@ -58,10 +63,10 @@
 #' Two bookkeeping columns are not used by the analysis functions:
 #' \describe{
 #'   \item{\code{X}}{Row index carried over from the pre-removal catalog (values
-#'     1–195, 179 distinct). Harmless residue; kept so the packaged table stays
+#'     1–209, 193 distinct). Harmless residue; kept so the packaged table stays
 #'     cell-identical to \code{data/dataset_info.csv}.}
 #'   \item{\code{method}}{Assay / data type recorded for the cohort:
-#'     \code{"RNA"} (121), \code{"TCGA-RNAseq"} (31), \code{"RNA-seq"} (8),
+#'     \code{"RNA"} (134), \code{"TCGA-RNAseq"} (31), \code{"RNA-seq"} (9),
 #'     \code{"array"} (1), \code{"SRA"} (1), and \code{NA} for the 17
 #'     lung-cancer GEO cohorts whose method was not recorded.}
 #' }

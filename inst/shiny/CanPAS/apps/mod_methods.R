@@ -165,18 +165,22 @@ server_mod_methods <- function(id, dataset_info) {
     output$sources <- renderUI({
       src <- .cohort_source(di$Accession)
       d <- data.frame(
-        Source = c("GEO", "CGGA", "TCGA", "cBioPortal-hosted (non-GEO)"),
-        Cohorts = c(sum(src == "GEO"), sum(src == "CGGA"), sum(src == "TCGA"),
-                    sum(src == "cBioPortal")),
+        Source = c("GEO", "EMBL-EBI (ArrayExpress/BioStudies)", "CGGA", "TCGA",
+                   "cBioPortal-hosted (non-GEO)"),
+        Cohorts = c(sum(src == "GEO"), sum(src == "EMBL-EBI"), sum(src == "CGGA"),
+                    sum(src == "TCGA"), sum(src == "cBioPortal")),
         Expression = c("MySQL mirror (gene-level queries over the API)",
+                       "MySQL mirror (the deposit's own processed matrix, or CEL files re-processed by RMA)",
                        "MySQL mirror",
                        "UCSC Xena, fetched per gene on demand",
                        "MySQL mirror (the study's own RNA-seq matrix: log2 CPM for A5-PCPG, log2 TPM for IMmotion150)"),
         Survival = c("MySQL mirror (&lt;ACC&gt;_surv)",
+                     "MySQL mirror (&lt;ACC&gt;_surv); SDRF annotation fields resolved to patient level",
                      "MySQL mirror (CGGA_&lt;ID&gt;_surv)",
                      "Local clinical/survival table",
                      "MySQL mirror (&lt;ACC&gt;_surv); clinical patient files deposited with the study"),
         `Cohort ids` = c("GSE…, GSE…_GPL…",
+                         paste(utils::head(di$Accession[src == "EMBL-EBI"], 3), collapse = ", "),
                          paste(di$Accession[src == "CGGA"], collapse = ", "),
                          paste0("TCGA-", c("BLCA", "BRCA", "…"), collapse = ", "),
                          paste(di$Accession[src == "cBioPortal"], collapse = ", ")),
@@ -197,7 +201,8 @@ server_mod_methods <- function(id, dataset_info) {
                  "25 / 26 annotation & overlap", "27 catalog notes",
                  "35–38 TCGA / GEO expansion",
                  "90–99 supplementary & expansion builds",
-                 "100–102 relaxed gate & platform names"),
+                 "100–102 relaxed gate & platform names",
+                 "103–107 EMBL-EBI platform maps, cohort builds & registration"),
         Script = c("01_parse_gse.R", "02_gpl_map.R, 12_gpl_map_symbol.R",
                    "03_surv_table.R", "04_qc_report.R", "05_dataset_plan.R",
                    "06_upload_db.R", "07_standardize_clinical.R, 07b, 07c",
@@ -212,7 +217,8 @@ server_mod_methods <- function(id, dataset_info) {
                    "27_catalog_notes.R",
                    "35_add_tcga_cohorts.R, 36_screen_geo_candidates.R, 37_geo_expansion_screen.R, 38_geo_expansion_annotation_check.R",
                    "90_build_gse108474_suppl.R, 91_complete_gse14520_surv.R, 92_build_geo_expansion_expr_pheno.R, 93_build_geo_expansion_bespoke.R, 94_update_catalog_geo_expansion.R, 95_build_suppl_expansion.R, 96_build_suppl_expansion.R, 98_update_catalog_suppl_expansion.R, 99_extend_gpl_db.R",
-                   "100_build_relaxed_gate.R, 101_update_catalog_relaxed_gate.R, 102_extend_gpl4133_agilent_name.R"),
+                   "100_build_relaxed_gate.R, 101_update_catalog_relaxed_gate.R, 102_extend_gpl4133_agilent_name.R",
+                   "103_build_embl_gpl_maps.R, 104_build_embl_cohorts.R, 105_update_catalog_embl.R, 106_build_embl_step2.R, 107_register_embl_step2.R"),
         What = c(
           "GEO series matrix -> expression table (ID_REF + one column per sample)",
           "Platform annotation -> probe to Entrez map; symbol-based mapping when the platform has no Entrez column",
@@ -237,18 +243,19 @@ server_mod_methods <- function(id, dataset_info) {
           "CohortGroup / Note bookkeeping written back into the catalog without touching the data tables",
           "16 TCGA cohorts added (catalog TCGA rows 15 -> 31); candidate GEO series screened and their annotations checked before inclusion",
           "Supplementary-file and expansion builds for individual cohorts (GSE108474, GSE14520, the GEO expansion sets); GPL24676 extended additively for the two cBioPortal-hosted studies",
-          "Two small cohorts built and catalogued under the relaxed gate (N >= 30); GPL4133 Agilent platform name extended"),
+          "Two small cohorts built and catalogued under the relaxed gate (N >= 30); GPL4133 Agilent platform name extended",
+          "EMBL-EBI (ArrayExpress/BioStudies) cohorts built from the deposit's own SDRF annotation and processed matrix (CEL files re-processed by RMA where none was deposited); platform maps built from the GEO platform SOFT for GPL16686 and GPL17585, which have no annotation package; 14 cohorts catalogued at patient level and their endpoint families registered"),
         check.names = FALSE, stringsAsFactors = FALSE)
       tagList(
         .methods_tbl(d),
-        p(class = "note", tags$code("pipeline/R/"), " holds ", tags$b("45 numbered steps"),
-          " (01–27, 35–38, 90–102; the table above lists every one of them) plus 9 helper,
+        p(class = "note", tags$code("pipeline/R/"), " holds ", tags$b("50 numbered steps"),
+          " (01–27, 35–38, 90–107; the table above lists every one of them) plus 9 helper,
           demo and validation scripts (", tags$code("batch_integrate.R"),
           ", ", tags$code("batch_integrate2.R"), ", ", tags$code("demo_meta_lung.R"),
           ", ", tags$code("demo_tcga_integration.R"), ", ", tags$code("demo_tcga_ondemand.R"),
           ", ", tags$code("demo_unified_reader.R"), ", ", tags$code("test_cpas_dataset.R"),
           ", ", tags$code("test_cpas_GSE44001.R"), ", ", tags$code("validate_cpas.R"),
-          "), i.e. 54 R files.")
+          "), i.e. 59 R files.")
       )
     })
 

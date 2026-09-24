@@ -15,8 +15,9 @@ ui_mod_datasets <- function(id) {
         br(), "· COX analysis — jump to COX analysis",
         br(), "· Source page — NCBI GEO, CGGA or GDC Portal in a new tab.
         ", br(), br(),
-        tags$b("Sources: "), "GEO (curated mirror), CGGA (3 glioma cohorts) and
-        TCGA (on-demand UCSC Xena expression + local clinical tables).",
+        tags$b("Sources: "), "GEO (curated mirror), EMBL-EBI (ArrayExpress/BioStudies),
+        CGGA (3 glioma cohorts), TCGA (on-demand UCSC Xena expression + local
+        clinical tables) and two cBioPortal-hosted studies.",
         br(), br(),
         tags$b("Workflow: "), "pick the endpoint family first — the table then lists
         only the cohorts that carry it, and a column shows the token each one

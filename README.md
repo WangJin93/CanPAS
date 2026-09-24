@@ -2,7 +2,8 @@
 
 `CanPAS` is an R package for survival analysis of public cancer cohorts. It serves
 expression matrices and survival tables from a curated GEO/CGGA mirror over a public
-REST API and from TCGA (UCSC Xena expression plus local clinical tables), and exposes
+REST API, from EMBL-EBI ArrayExpress/BioStudies deposits and from TCGA (UCSC Xena
+expression plus local clinical tables), and exposes
 one uniform **merged-data schema** to Kaplan–Meier, Cox, time-dependent ROC,
 cross-cohort meta-analysis, pooled Kaplan–Meier and competing-risks analyses. A bundled
 Shiny application drives the same exported functions.
@@ -19,7 +20,7 @@ What it adds to the usual single-cohort workflow:
 * **Numerical verification against reference implementations** (`survival`, `metafor`,
   `cmprsk`), including a competing-risks variance defect that the comparison exposed
   and this release corrects.
-* **A catalog, not just a downloader**: 179 catalogued cohorts in one schema, with
+* **A catalog, not just a downloader**: 193 catalogued cohorts in one schema, with
   sample sizes defined as analysable patients and with patient-overlap groups recorded.
 
 > Naming note: the package was originally created under the name "Cancer Patient
@@ -125,17 +126,42 @@ run_cpas_app()
 ## The catalog
 
 `data(dataset_info)` ships the catalog used by the app and by the paper:
-**179 cohorts — 143 GEO, 31 TCGA projects, 3 CGGA and 2 cBioPortal-hosted studies — across
-29 cancer types**, and every row carries a resolved endpoint; together they contribute
-**37,121 analysable samples** (median 161 per cohort, range 34–1,210). The two
-cBioPortal-hosted cohorts (A5-PCPG, Pheochromocytoma; IMmotion150, Kidney Cancer) are
-studies whose clinical and expression files are deposited together, not GEO series, so they
-are counted in their own bucket and the GEO count is 143 rather than 145. A small number of
+**193 cohorts — 143 GEO, 14 EMBL-EBI (ArrayExpress/BioStudies), 31 TCGA projects, 3 CGGA
+and 2 cBioPortal-hosted studies — across 29 cancer types**, and every row carries a resolved
+endpoint; together they contribute **38,801 analysable samples** (median 155 per cohort,
+range 30–1,210). Two source groups are deliberately kept out of GEO: the fourteen EMBL-EBI
+cohorts (`E-MTAB-*`, `E-TABM-*`, `E-MEXP-*`) are ArrayExpress/BioStudies deposits retrieved
+from their own SDRF annotation and processed matrices rather than through GEO's mirror
+actions, and the two cBioPortal-hosted cohorts (A5-PCPG, Pheochromocytoma; IMmotion150,
+Kidney Cancer) are studies whose clinical and expression files are deposited together;
+counting either as GEO would give 157 or 145 instead of 143. A small number of
 cohorts carry only 30–40 patients and are flagged as such in the catalog `Note` field (the
 admission gate was relaxed from > 50 to >= 30 patients per cohort for these additions).
 Sample size means
 analysable patients:
 expression data plus a non-missing time and status for the cohort's primary endpoint.
+
+### Column semantics
+
+The four size columns are not interchangeable, and one rule fixes all of them:
+
+| Column | Meaning |
+|---|---|
+| `N` | **Analysable samples** — present in both the delivered expression and survival tables and carrying a usable *primary* endpoint (status and time non-missing). |
+| `n_events` | Events of the **primary** endpoint **among those `N` samples** — not the event total of the survival table. |
+| `n_surv` | Row count of the delivered survival table, **including** rows with no usable endpoint. |
+| `n_expr` | Sample columns of the delivered expression table; `NA` for the 31 TCGA cohorts, which are fetched on demand from `<CPAS_DATA_ROOT>/data/tcga/*.rda` and never mirrored. |
+
+**Which layer is authoritative:** the delivered local artefacts — the expression `.rds`
+under `data/expr/` and the survival tables under `data/processed/surv/` — are the source of
+truth. The MySQL mirror and the packaged `dataset_info` object are downstream copies, and
+`pipeline/R/16_verify_catalog_mirror.R` checks both against the local artefacts (at the
+193-row state it reports 0 errors / 0 warnings / 0 info, 193/193 rows fully usable).
+
+This convention is why a survival table with 522 rows can carry `n_surv = 522`,
+`N = 476` and `n_events = 397` at the same time (GSE108474): 397 is the number of events
+among the 476 analysable samples, while 404 is the event count over all 522 rows — a
+different quantity, and not the one the catalog records.
 Patient-overlap groups are recorded (29 pairs in 13 groups recomputed against this
 catalog by `pipeline/R/26_cohort_overlap.R`, with `data(dataset_info)$CohortGroup` and
 `$Note` carrying the result). One further title match — the GSE25066–GSE32918 pair — is
@@ -153,17 +179,17 @@ cohort and always reported.
 
 | Family | Tokens pooled | Cohorts |
 |---|---|---|
-| OS | OS | 128 |
+| OS | OS | 139 |
 | DSS | DSS, CSS, BCSS | 39 |
-| DFS | DFS, RFS, EFS, DFI | 94 |
-| PFS | PFS, PFI | 45 |
+| DFS | DFS, RFS, EFS, DFI | 95 |
+| PFS | PFS, PFI | 47 |
 | MFS | MFS, DRFS | 17 |
 
 `DFI` and `PFI` (TCGA) are derived from the original endpoint fields and are flagged as
 derived. Pooling inside a family and never across families is enforced by the package;
 a mixed-token pool warns, naming each cohort and its token. A separate browsing
 vocabulary widens the progression family to metastasis endpoints, so the Datasets page
-can show a PFS cohort count (62) larger than the pooling count (45).
+can show a PFS cohort count (64) larger than the pooling count (47).
 
 ## Statistical safeguards (read before quoting a result)
 
@@ -205,8 +231,10 @@ overlap warning and the caveats.
 | Source | Expression | Survival / clinical |
 |---|---|---|
 | GEO (143 cohorts) | CanPAS MySQL mirror over a public REST API | mirror table `<ACC>_surv` |
+| EMBL-EBI (14 cohorts) | the deposit's own processed matrix, or CEL files re-processed by RMA | SDRF annotation fields, resolved to patient level |
 | CGGA (3 glioma cohorts) | mirror | mirror table `CGGA_<ID>_surv` |
 | TCGA (31 projects) | UCSC Xena, fetched per gene on demand | local `<CPAS_DATA_ROOT>/data/tcga/*.rda` |
+| cBioPortal-hosted (2 cohorts) | mirror (the study's own RNA-seq matrix) | clinical patient files deposited with the study |
 | cBioPortal-hosted (2 studies) | mirror (RNA-seq deposited with the study) | same studies' clinical files, loaded as local survival tables |
 
 Cohort data remain the property of the original studies: cite the GEO/CGGA/TCGA

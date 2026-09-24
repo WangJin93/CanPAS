@@ -4,6 +4,56 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Catalog growth to 193 cohorts: fourteen EMBL-EBI cohorts added (2026-09-25)
+
+The catalog now holds **193 cohorts (38,801 analysable samples)** in **five** source
+buckets instead of four: GEO 143, **EMBL-EBI 14**, TCGA 31, CGGA 3 and cBioPortal-hosted 2.
+No existing cohort, no cohort data file and no mirror table was modified.
+
+* **A new retrieval route: EMBL-EBI ArrayExpress/BioStudies.** Fourteen deposits
+  (`E-MTAB-*`, `E-TABM-*`, `E-MEXP-*`) are retrieved from their own SDRF annotation and
+  their deposited processed matrix — or, where none was deposited, from the raw CEL files
+  re-processed here by RMA — instead of through the GEO mirror. They are their own source
+  bucket in `dataset_info`, in the app and in the paper; folding them into GEO would report
+  157 GEO cohorts rather than 143. Only one needed a platform map built from the GEO
+  platform SOFT because no Bioconductor annotation package exists for it (`GPL16686`,
+  `GPL17585`); measured probe coverage is recorded per cohort in the catalog `Note`.
+* **Patient-level registration for row-level deposits.** Several deposits describe one
+  patient in more than one row (a tumour and a normal column, a second non-expression
+  assay, or `GeoMx` ROIs). These are collapsed to one row per patient before `N` is
+  computed, and each collapse is recorded in the `Note` field together with the row-level
+  figure it replaces.
+* **Two small cohorts admitted under the relaxed gate.** `E-MTAB-1719` (mesothelioma,
+  N = 34) and `E-MEXP-2780` (pancreatic, N = 30) were admitted under the gate relaxed from
+  > 50 to >= 30 patients and are flagged `small cohort` in `Note`, as the earlier relaxed-gate
+  additions are. The catalog now holds seven cohorts at 30–40 analyzable patients.
+* **`16_verify_catalog_mirror.R` was hardened.** An earlier EMBL-EBI batch registered eleven
+  rows whose `SurvivalTypes` was populated but whose `EndpointFamilies`, `EndpointPrimary` and
+  every `EP_*` column were `NA` — invisible to the "rows without endpoint annotation" count
+  (which reads `SurvivalTypes`), so those cohorts were silently absent from every family and
+  from family-paired pooling. The check now raises an **ERROR** for "endpoint columns all NA
+  while the row is endpoint-annotated or has a survival table", and it is evaluated locally
+  as well as against the mirror. At the 193-row state the script reports
+  **0 errors / 0 warnings / 0 info** with 193/193 rows fully usable.
+* **Six-row arithmetic audit resolved with no row changed.** A sample audit flagged six rows
+  where the catalog's arithmetic appeared to disagree with the local tables (`TCGA-MESO`,
+  `TCGA-UCEC` `n_surv`; `CGGA_693`, `CGGA_301`, `CGGA_325`, `GSE108474` `n_events`). Re-reading
+  the delivered artefacts showed every catalog value already correct under one convention, now
+  written up in `README.md` § *Column semantics*: `n_surv` is the row count of the delivered
+  survival table, and `n_events` counts the primary endpoint's events **among the `N`
+  analysable samples**, not among all rows of the survival table. The audit's alternative
+  figures were a different quantity in each case (the raw TCGA project sample count before the
+  build drops endpoint-uninformative samples; the all-rows event count). Verified against every
+  non-TCGA row that has both a delivered expression and a delivered survival table carrying its
+  primary endpoint (112 rows): the convention reproduces `N` and `n_events` for 110, the two
+  exceptions being documented patient/clinical-level audit cohorts (`GSE31312`, `GSE325123`).
+  No catalog cell, and therefore no catalog hash, changed.
+* **Documentation and the app follow the five buckets.** `README.md`, `HELP.md`, the packaged
+  `dataset_info` help page and the Shiny application's Datasets page, Methods page (source
+  table and pipeline step list) and source links all distinguish the EMBL-EBI bucket and
+  link it to ArrayExpress/BioStudies. The catalog CSV and the packaged `dataset_info.rda` are
+  cell-identical (0 of 5,018 cells differ).
+
 ## Fixes from the full package audit of 2026-09-24 (two blocking defects)
 
 A full package audit against the 179-row catalog found two blocking defects; both are fixed
