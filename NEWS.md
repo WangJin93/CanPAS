@@ -18,6 +18,22 @@ bundled Shiny application; this section documents the state of that first releas
   offers the CSV download; the Word download explains that `flextable` is needed).
 * README licence/dependency sections updated.
 
+## Catalog expanded with three supplementary GEO cohorts (152 -> 155 rows)
+
+Three cohorts whose survival data sits outside the series matrix were built and uploaded
+through the normal pipeline: **GSE108474** (REMBRANDT glioma, GPL570; time and event both
+from the clinical supplement joined by subject id at 550/550 = 100%; OS, N = 476, 397 events;
+eight all-NA `*_duplicate*` expression columns dropped, 550 -> 542; zero overlap with
+CGGA_301/325/693 so it enters standalone), **GSE53625** (esophageal squamous cell carcinoma,
+GPL18109; 358 samples, OS, 212 events) and **GSE102238** (pancreatic ductal adenocarcinoma,
+GPL19072; 100 samples, OS, 60 events). The two Agilent platforms carried no gene annotation in
+GEO, so probe maps were obtained with `AnnoProbe::idmap(type = "pipe")` (73.0% and 67.3% of
+probes mapped to Entrez ids) in the usual `ID_REF` + `ENTREZ_GENE_ID` layout. Survival,
+expression and GPL tables are in the mirror and `16_verify_catalog_mirror.R` reports 0 errors.
+The catalog now holds 155 cohorts across 28 cancer types (121 GEO, 31 TCGA,
+3 CGGA), families OS 116 / DSS 38 / DFS 91 / PFS 39 / MFS 14, and
+33,814 analysable samples.
+
 ## Catalog expanded with 16 TCGA projects (136 -> 152 rows)
 
 Sixteen TCGA projects that were present in the local clinical/survival tables but had never
