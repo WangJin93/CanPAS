@@ -471,11 +471,33 @@
   sprintf("%s (%s family)", token, df_family)
 }
 
-# Source of a cohort: GEO / CGGA / TCGA --------------------------------
+# Source of a cohort: GEO / CGGA / TCGA / cBioPortal-hosted ------------------
+# The accession prefix decides the bucket. The catalog holds four groups:
+# GSE* (143), TCGA-* (31), CGGA* (3) and two studies that are none of the three
+# because their clinical (and expression) files were deposited with the study on
+# cBioPortal, not as a GEO series (A5-PCPG, IMmotion150). Folding those two into
+# GEO would misreport both the count and the link, so they are their own bucket.
 .cohort_source <- function(acc) {
   acc <- as.character(acc)
   ifelse(startsWith(acc, "TCGA-"), "TCGA",
-         ifelse(startsWith(acc, "CGGA"), "CGGA", "GEO"))
+         ifelse(startsWith(acc, "CGGA"), "CGGA",
+                ifelse(startsWith(acc, "GSE"), "GEO", "cBioPortal")))
+}
+
+# cBioPortal study URL of a cohort that is neither GEO, TCGA nor CGGA. The study
+# id is read from the catalog's Note when it quotes one ("cBioPortal <study>"),
+# with the cBioPortal data page as the fallback.
+.cohort_link_cbioportal <- function(acc) {
+  acc <- as.character(acc)
+  di <- tryCatch(.pkg_data2("dataset_info"), error = function(e) NULL)
+  note <- if (!is.null(di) && all(c("Accession", "Note") %in% colnames(di)))
+    as.character(di$Note[match(acc, as.character(di$Accession))]) else rep(NA_character_, length(acc))
+  note[is.na(note)] <- ""
+  id <- sub("^.*cBioPortal[[:space:]]+([A-Za-z0-9_.-]+).*$", "\\1", note)
+  ok <- nzchar(id) & id != note
+  ifelse(ok,
+         sprintf('<a href="https://www.cbioportal.org/study/summary?id=%s" target="_blank">cBioPortal</a>', id),
+         '<a href="https://www.cbioportal.org/datasets" target="_blank">cBioPortal</a>')
 }
 
 .cohort_link <- function(acc) {
@@ -485,7 +507,9 @@
          sprintf('<a href="https://portal.gdc.cancer.gov/projects/%s" target="_blank">GDC</a>', acc),
          ifelse(src == "CGGA",
                 sprintf('<a href="http://www.cgga.org.cn/" target="_blank">CGGA</a>'),
-                sprintf('<a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=%s" target="_blank">NCBI</a>', acc)))
+                ifelse(src == "GEO",
+                       sprintf('<a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=%s" target="_blank">NCBI</a>', acc),
+                       .cohort_link_cbioportal(acc))))
 }
 
 # Families a cohort provides, in the canonical family order --------------

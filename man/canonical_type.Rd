@@ -7,7 +7,8 @@
 canonical_type(dataset)
 }
 \arguments{
-\item{dataset}{TCGA dataset id (\code{"LUAD"} or \code{"TCGA-LUAD"}).}
+\item{dataset}{TCGA dataset id (\code{"LUAD"} or \code{"TCGA-LUAD"}). A GEO or
+CGGA accession is not a TCGA id and returns \code{NA}.}
 }
 \value{
 The canonical cancer-type label or \code{NA_character_} when the
@@ -17,8 +18,8 @@ project is unknown.
 Canonical CanPAS cancer type of a TCGA project
 }
 \examples{
-  ## Real accessions from the catalog, and the type label CanPAS reports.
-  canonical_type("GSE13507")
+  ## Real TCGA accessions from the catalog, and the type label CanPAS reports.
   canonical_type("TCGA-LUAD")
-  canonical_type("GSE17538_GPL570")
+  canonical_type("TCGA-ACC")
+  canonical_type("TCGA-XXXX")   # unknown project -> NA
 }

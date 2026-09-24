@@ -10,17 +10,18 @@ short_name(dataset)
 \item{dataset}{TCGA dataset id (\code{"LUAD"} or \code{"TCGA-LUAD"}).}
 }
 \value{
-\code{"TCGA-<PROJECT>"}.
+A single string, \code{"TCGA-<PROJECT>"} (only the first element of
+\code{dataset} is used).
 }
 \description{
-Short dataset name of a TCGA project
+Prefixes a TCGA project id with \code{"TCGA-"}. Only the first
+element of \code{dataset} is used, and the input must be a TCGA id
+(\code{"LUAD"} or \code{"TCGA-LUAD"}) — a GEO accession such as
+\code{"GSE13507"} would come back as \code{"TCGA-GSE13507"}, which is why
+GEO cohorts are labelled by their catalog accessions instead.
 }
 \examples{
-  ## Short labels used in figures and tables.
-  short_name("GSE13507")
+  ## Short labels used in figures and tables (TCGA ids only).
+  short_name("LUAD")
   short_name("TCGA-LUAD")
-  short_name("GSE31210")
-
-  ## Vectorised, so a whole selection can be labelled at once.
-  short_name(c("GSE14814", "GSE31210", "GSE37745"))
 }

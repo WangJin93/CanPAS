@@ -2,15 +2,20 @@
 % Please edit documentation in R/cpas_extra_sources.R
 \name{tcga_retained}
 \alias{tcga_retained}
-\title{TCGA projects mirrored in CanPAS}
+\title{TCGA projects available through the TCGA helpers}
 \format{
-Named character vector.
+Named character vector, one entry per TCGA cohort in the catalog.
 }
 \usage{
 tcga_retained
 }
 \description{
 Named vector mapping TCGA project abbreviations to the cancer
-type labels used in CanPAS. Only these projects are available through the
-TCGA helpers.
+type labels used in CanPAS. It is derived from the shipped catalog (every
+\code{\link{dataset_info}} row whose \code{Accession} starts with
+\code{"TCGA-"}; the \code{Type} column supplies the label), so it always
+agrees with the catalog and every listed project is accepted by
+\code{\link{tcga_project_dataset}}, \code{\link{tcga_surv_table}},
+\code{\link{tcga_merged}}, \code{\link{tcga_get_expr}} and
+\code{\link{canonical_type}}.
 }

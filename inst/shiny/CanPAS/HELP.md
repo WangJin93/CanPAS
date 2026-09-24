@@ -155,8 +155,11 @@ a cohort is added:
 
 - **Accession spelling** — catalog and database use an **underscore** before the
   platform (`GSE10885_GPL1390`); the local RDS files use a **dash**
-  (`GSE10885-GPL1390.rds`). The API queries the database with the catalog string
-  verbatim, so a dash-spelled accession returns an error.
+  (`GSE10885-GPL1390.rds`). The API queries the database with the name it is
+  given and cannot serve a dash-spelled table, so `get_data()` sends a dash as
+  an underscore: the catalog's `A5-PCPG` (a cBioPortal-hosted study whose real
+  study id is hyphenated) queries the mirror table `A5_PCPG`. New accessions
+  should still be spelled with the underscore the mirror uses.
 - **Reported n** — KM / COX status lines report the rows actually entering the
   model. Rows without the selected endpoint's time/status, or without a marker
   value, are excluded and the number excluded is printed explicitly.
@@ -172,9 +175,14 @@ used as a time-to-event endpoint, and a token with (almost) no events (OS in
 
 - **Cancer type** labels are title-cased (`Lung Cancer`, `Multiple Myeloma`) and
   are the grouping key of the Multi-datasets page.
-- **Source** is derived from the accession: `TCGA-*` → TCGA, `CGGA*` → CGGA,
-  everything else → GEO. The Datasets page shows the source and links to the
-  matching portal (NCBI GEO / CGGA / GDC).
+- **Source** is derived from the accession prefix: `TCGA-*` → TCGA, `CGGA*` →
+  CGGA, `GSE*` → GEO, everything else → **cBioPortal-hosted**. That fourth bucket
+  holds the two studies whose clinical and expression files were deposited with
+  the study on cBioPortal instead of as a GEO series (`A5-PCPG`,
+  Pheochromocytoma; `IMmotion150`, Kidney Cancer). The four buckets are
+  GEO 143 / TCGA 31 / CGGA 3 / cBioPortal-hosted 2 = 179 cohorts. The Datasets
+  page shows the source and links to the matching portal (NCBI GEO / CGGA / GDC /
+  cBioPortal).
 - **Endpoint columns**: `SurvivalTypes` holds the raw tokens, `EndpointFamilies`
   the families a cohort can be pooled under, and `EP_OS`/`EP_DSS`/`EP_DFS`/`EP_PFS`/
   `EP_MFS` the token the cohort contributes to each family (NA when absent).
@@ -186,13 +194,13 @@ separately with its cohort count:
 
 | Filter | Meaning | Cohorts |
 |---|---|---|
-| Any | no family filter | 152 |
-| OS | overall survival | 98 |
-| DSS | disease-specific survival (DSS / CSS / BCSS) | 22 |
-| DFS | disease-free survival (DFS / RFS / EFS / DFI) | 80 |
-| PFS | progression-free survival (PFS / PFI) | 23 |
-| MFS | metastasis-free survival (MFS / DRFS) | 13 |
-| PFS or MFS | the broader "no progression / no metastasis" view | 36 |
+| Any | no family filter | 179 |
+| OS | overall survival | 128 |
+| DSS | disease-specific survival (DSS / CSS / BCSS) | 39 |
+| DFS | disease-free survival (DFS / RFS / EFS / DFI) | 94 |
+| PFS | progression-free survival (PFS / PFI) | 45 |
+| MFS | metastasis-free survival (MFS / DRFS) | 17 |
+| PFS or MFS | the broader "no progression / no metastasis" view | 62 |
 
 The **Endpoint families** column shows, per cohort, the family and the token it
 contributes — `DFS (RFS), MFS`, `MFS (DRFS)`, `DFS (DFI) [derived]` — i.e. the

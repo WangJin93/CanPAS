@@ -4,6 +4,57 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Fixes from the full package audit of 2026-09-24 (two blocking defects)
+
+A full package audit against the 179-row catalog found two blocking defects; both are fixed
+here and re-verified. No catalog row, no cohort data and no mirror table was changed.
+
+* **Every catalogued TCGA project now works (16 of the 31 failed before).**
+  `tcga_project_dataset()`, `tcga_surv_table()`, `tcga_merged()`, `tcga_get_expr()` and
+  `canonical_type()` validated their input against a hard-coded 15-project vector
+  (`tcga_retained`) while the catalog had grown to 31 TCGA cohorts, so ACC, ESCA, HNSC,
+  KICH, KIRC, KIRP, MESO, PCPG, SARC, SKCM, TGCT, THCA, THYM, UCEC, UCS and UVM raised
+  `Unsupported TCGA project` in every TCGA helper, `canonical_type()` returned `NA` for
+  them, and the Shiny app (which builds its cohort lists from the catalog and routes every
+  `TCGA-*` accession through those helpers) could not analyse them. The supported set is
+  now **derived from the shipped catalog** — every `dataset_info` row whose `Accession`
+  starts with `TCGA-`, with the `Type` column as the label — the exported `tcga_retained`
+  object is refreshed from the catalog when the package is loaded (the previous vector
+  survives only as an internal fallback), and the new
+  `tests/testthat/test-tcga-catalog.R` fails as soon as the fallback and the catalog
+  disagree. It needs no network and is **not** `skip_on_cran()`, unlike the four network
+  tests in `test-tcga.R` that let this drift through unnoticed. Verified for all 31
+  cohorts: `tcga_project_dataset()`, `tcga_surv_table()`,
+  `tcga_merged(<project>, "TP53")`, `get_expr_data("TCGA-<project>", "TP53")` and
+  `canonical_type()` all succeed (31/31, 2026-09-24).
+* **An accession whose catalog spelling contains a dash is now readable (`A5-PCPG`).**
+  `get_data()` sent the accession to the API verbatim, but the mirror names every table with
+  an underscore and the API interpolates the name into its SQL: a dash-spelled table cannot
+  be served at all (measured — an existing `X-Y` table answers HTTP 500 while its `X_Y`
+  twin answers 200), so `get_data("A5-PCPG", "surv_data")`, `get_expr_data("A5-PCPG", …)`
+  and `cohort_merged("A5-PCPG", …)` all failed with HTTP 500, and the cohort was
+  unreachable in the app. `get_data()` now sends a dash as the underscore the mirror uses
+  (`A5-PCPG` → table `A5_PCPG`) while the catalog accession stays authoritative and is
+  echoed back unchanged; this is a no-op for the other 178 accessions (no other non-TCGA
+  accession contains a dash). `HELP.md` documents the rule, and
+  `pipeline/R/16_verify_catalog_mirror.R` gained an explicit check that no mirror table
+  name contains a dash, so a future hyphenated accession cannot be uploaded into a table
+  the API can never read. Verified: `A5-PCPG` survival (77 rows), expression (77 × 2) and
+  `cohort_merged("A5-PCPG", "TP53", "OS")` all return data; `16_verify_catalog_mirror.R`
+  reports 0 errors / 0 warnings / 0 info for all 179 cohorts.
+
+Documentation and app-text corrections in the same round: `dataset_info.Rd` now documents
+the `X` and `method` columns and no longer claims "one row per GEO dataset" (the catalog is
+143 GEO + 31 TCGA + 3 CGGA + 2 cBioPortal-hosted); `cpas_km_pooled()` is documented as
+returning a plain `list` (it has no class attribute); the `canonical_type()` and
+`short_name()` examples use TCGA accessions and `short_name()` is documented as using only
+the first element instead of being "vectorised"; the app's Methods page reports the current
+overlap register (29 pairs in 13 groups), the current re-verification count (159 cohort
+tables, 156 clean), the honest four source buckets (GEO 143 / TCGA 31 / CGGA 3 /
+cBioPortal-hosted 2), the analysable-sample definition of `N`, and the full 45-step
+pipeline inventory; `HELP.md` carries the updated family counts (OS 128, DSS 39, DFS 94,
+PFS 45, MFS 17, "PFS or MFS" 62, any 179) and the fourth source bucket.
+
 ## Catalog expanded to 179 rows: two small cohorts admitted under a relaxed gate
 
 Two small cohorts were added under an admission gate the author relaxed from **> 50 to

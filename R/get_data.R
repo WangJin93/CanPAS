@@ -6,7 +6,10 @@
 #' @param dataset Mirror table to query: a dataset accession for
 #'   \code{action = "expression"} / \code{"surv_data"}, or a platform id
 #'   (e.g. \code{"GPL96"}) for \code{action = "gpl"}. The value is sent to the
-#'   API as its \code{table} request parameter.
+#'   API as its \code{table} request parameter, with one substitution: a dash is
+#'   sent as the underscore the mirror uses (\code{"A5-PCPG"} queries the table
+#'   \code{A5_PCPG}), because the API interpolates the name into its SQL and
+#'   cannot serve a dash-spelled table.
 #' expression / survival queries or \code{"GPL570"} for platform (gpl) queries.
 #' @param action One of \code{"expression"} (sample-level expression of the
 #' requested probes/ids), \code{"gpl"} (probe-to-gene mapping of a platform) or
@@ -65,6 +68,18 @@ get_data <- function(dataset,
   input_params <- list(dataset = dataset, action = action, ids = ids,
                        request_time = Sys.time())
 
+  # Mirror table spelling. The mirror names every table with an underscore
+  # (see HELP.md, "Mirror coverage and catalog names"); the API interpolates the
+  # name into its SQL verbatim and cannot serve a dash at all - an existing
+  # "X-Y" table answers HTTP 500 while its "X_Y" twin answers 200 (measured
+  # against two throwaway tables, 2026-09-24). One catalog row is spelled with a
+  # dash ("A5-PCPG", a cBioPortal-hosted study whose real id is hyphenated), so
+  # the table actually queried uses the mirror spelling while the catalog
+  # accession stays authoritative and is echoed back unchanged in
+  # `input_params$dataset`. This is a no-op for every other accession in the
+  # catalog (no other non-TCGA accession contains a dash).
+  table_id <- gsub("-", "_", dataset, fixed = TRUE)
+
   if (action %in% c("expression", "gpl")) {
     if (is.null(ids) || length(ids) == 0L)
       stop("'ids' is required for action = '", action, "'.")
@@ -72,9 +87,9 @@ get_data <- function(dataset,
     if (anyNA(ids) || any(!grepl("^[A-Za-z0-9./,_-]+$", ids)))
       stop("'ids' may only contain letters, digits, '.', '_', '-', '/' and ','.")
     id_str <- paste0(ids, collapse = ",")
-    url <- paste0(base_url, "?action=", action, "&table=", dataset, "&ids=", id_str)
+    url <- paste0(base_url, "?action=", action, "&table=", table_id, "&ids=", id_str)
   } else {
-    url <- paste0(base_url, "?action=", action, "&table=", dataset)
+    url <- paste0(base_url, "?action=", action, "&table=", table_id)
   }
 
   old_timeout <- getOption("timeout")

@@ -17,7 +17,10 @@ get_data(
 \item{dataset}{Mirror table to query: a dataset accession for
   \code{action = "expression"} / \code{"surv_data"}, or a platform id
   (e.g. \code{"GPL96"}) for \code{action = "gpl"}. The value is sent to the
-  API as its \code{table} request parameter.
+  API as its \code{table} request parameter, with one substitution: a dash is
+  sent as the underscore the mirror uses (\code{"A5-PCPG"} queries the table
+  \code{A5_PCPG}), because the API interpolates the name into its SQL and
+  cannot serve a dash-spelled table.
 expression / survival queries or \code{"GPL570"} for platform (gpl) queries.}
 
 \item{action}{One of \code{"expression"} (sample-level expression of the

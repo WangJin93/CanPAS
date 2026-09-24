@@ -34,7 +34,7 @@ ui_mod_methods <- function(id) {
         p(class = "note", "Expression values are read from the MySQL mirror at analysis
           time; TCGA expression is fetched on demand from UCSC Xena and TCGA clinical
           tables are stored locally. Survival tables always come from the mirror
-          (GEO, CGGA) or the local TCGA table (TCGA)."),
+          (GEO, CGGA, cBioPortal-hosted studies) or the local TCGA table (TCGA)."),
         p(class = "note", tags$b("Expression scale: "), "all mirrored GEO and CGGA
           matrices are on the log2 scale. 28 datasets were deposited by GEO as linear
           intensities (platform-dependent units, e.g. MAS5 values in the 10^3-10^5
@@ -56,7 +56,8 @@ ui_mod_methods <- function(id) {
         "3 · Cleaning and standardisation rules",
         uiOutput(ns("clean")),
         p(class = "note", "Standardised cohorts were re-verified one by one
-          (131 cohorts, report: ", tags$code("REPORT_clinical_normalization_verify.md"),
+          (159 cohort tables: 156 clean, 3 with one flagged column each; report: ",
+          tags$code("REPORT_clinical_normalization_verify.md"),
           "). Tokens that could not be mapped to a standard level are listed in
           ", tags$code("clinical_std_stage_unmapped.csv"), " rather than silently coerced.")
       ),
@@ -134,7 +135,8 @@ ui_mod_methods <- function(id) {
         p("Some cohorts in the catalog are not independent: a study measured on two
           platforms appears as two accessions, and a few series were deposited twice
           under different GSE numbers. Comparing the sample titles across all cohorts
-          (", tags$code("26_cohort_overlap.R"), ") finds 15 such pairs in 10 groups,
+          (", tags$code("26_cohort_overlap.R"), ") finds 29 such pairs (32 cohorts) in
+          13 groups,
           e.g. GSE3494_GPL96/GPL97 (179 shared patients), GSE37642_GPL96/GPL97 (422),
           GSE9782_GPL96/GPL97 (264), GSE17536 and GSE17537 against GSE17538_GPL570
           (177 and 55), GSE2990 against GSE6532_GPL96 (189), GSE11969 against
@@ -163,17 +165,21 @@ server_mod_methods <- function(id, dataset_info) {
     output$sources <- renderUI({
       src <- .cohort_source(di$Accession)
       d <- data.frame(
-        Source = c("GEO", "CGGA", "TCGA"),
-        Cohorts = c(sum(src == "GEO"), sum(src == "CGGA"), sum(src == "TCGA")),
+        Source = c("GEO", "CGGA", "TCGA", "cBioPortal-hosted (non-GEO)"),
+        Cohorts = c(sum(src == "GEO"), sum(src == "CGGA"), sum(src == "TCGA"),
+                    sum(src == "cBioPortal")),
         Expression = c("MySQL mirror (gene-level queries over the API)",
                        "MySQL mirror",
-                       "UCSC Xena, fetched per gene on demand"),
+                       "UCSC Xena, fetched per gene on demand",
+                       "MySQL mirror (the study's own RNA-seq matrix: log2 CPM for A5-PCPG, log2 TPM for IMmotion150)"),
         Survival = c("MySQL mirror (&lt;ACC&gt;_surv)",
                      "MySQL mirror (CGGA_&lt;ID&gt;_surv)",
-                     "Local clinical/survival table"),
+                     "Local clinical/survival table",
+                     "MySQL mirror (&lt;ACC&gt;_surv); clinical patient files deposited with the study"),
         `Cohort ids` = c("GSE…, GSE…_GPL…",
                          paste(di$Accession[src == "CGGA"], collapse = ", "),
-                         paste0("TCGA-", c("BLCA", "BRCA", "…"), collapse = ", ")),
+                         paste0("TCGA-", c("BLCA", "BRCA", "…"), collapse = ", "),
+                         paste(di$Accession[src == "cBioPortal"], collapse = ", ")),
         check.names = FALSE, stringsAsFactors = FALSE)
       .methods_tbl(d)
     })
@@ -185,18 +191,28 @@ server_mod_methods <- function(id, dataset_info) {
                  "07 clinical standardisation", "08 verification",
                  "09 survival sync", "10 CGGA", "11 endpoint families",
                  "13 small cohorts", "14 / 15 per-platform split",
+                 "16 catalog ↔ mirror check", "17 status recoding",
                  "18 / 20 expression scale", "19 catalog sample sizes",
-                 "23 / 24 data repairs", "25 / 26 annotation & overlap"),
+                 "22 log2 impact report", "23 / 24 data repairs",
+                 "25 / 26 annotation & overlap", "27 catalog notes",
+                 "35–38 TCGA / GEO expansion",
+                 "90–99 supplementary & expansion builds",
+                 "100–102 relaxed gate & platform names"),
         Script = c("01_parse_gse.R", "02_gpl_map.R, 12_gpl_map_symbol.R",
                    "03_surv_table.R", "04_qc_report.R", "05_dataset_plan.R",
                    "06_upload_db.R", "07_standardize_clinical.R, 07b, 07c",
                    "08_verify_normalization.R", "09_update_db_surv.R",
                    "10_parse_cgga.R", "11_endpoint_families.R",
                    "13_upload_small_cohorts.R", "14_split_gse40272_surv.R, 15_split_gse40272_expr.R",
+                   "16_verify_catalog_mirror.R", "17_recod_gse86166_status.R",
                    "18_log2_transform.R, 20_log2_transform_db.R, 21_reupload_log2_tables.R",
-                   "19_fix_catalog_N.R",
+                   "19_fix_catalog_N.R", "22_report_log2_impact.R",
                    "23_fix_surv_ids_and_endpoints.R, 24_make_tables_writable.R",
-                   "25_fix_endpoint_annotations.R, 26_cohort_overlap.R"),
+                   "25_fix_endpoint_annotations.R, 26_cohort_overlap.R",
+                   "27_catalog_notes.R",
+                   "35_add_tcga_cohorts.R, 36_screen_geo_candidates.R, 37_geo_expansion_screen.R, 38_geo_expansion_annotation_check.R",
+                   "90_build_gse108474_suppl.R, 91_complete_gse14520_surv.R, 92_build_geo_expansion_expr_pheno.R, 93_build_geo_expansion_bespoke.R, 94_update_catalog_geo_expansion.R, 95_build_suppl_expansion.R, 96_build_suppl_expansion.R, 98_update_catalog_suppl_expansion.R, 99_extend_gpl_db.R",
+                   "100_build_relaxed_gate.R, 101_update_catalog_relaxed_gate.R, 102_extend_gpl4133_agilent_name.R"),
         What = c(
           "GEO series matrix -> expression table (ID_REF + one column per sample)",
           "Platform annotation -> probe to Entrez map; symbol-based mapping when the platform has no Entrez column",
@@ -211,12 +227,29 @@ server_mod_methods <- function(id, dataset_info) {
           "Endpoint tokens grouped into families; catalog annotated per cohort",
           "Cohorts below the historical N > 79 gate added to the mirror",
           "Studies stored only at GSE level split per platform (sample lists from the GEO series matrix)",
+          "Standing consistency gate between the catalog and the mirror: accession spelling, orphan tables, sample sizes and 0/1 status coding",
+          "Endpoint status column of GSE86166 recoded from its published coding to 0/1",
           "Expression values brought to one scale: log2(value + 1) for the 28 datasets deposited as linear intensities (files were stored as deposited by GEO)",
           "Catalog sample sizes recomputed from the mirror: N = analysable samples, plus n_expr / n_surv / n_events and per-family counts",
+          "Before/after report of the expression-scale conversion (which cohorts changed, by how much)",
           "Survival-table repairs: restored lost sample ids (GSE4573, GSE3494), derived an empty status column from its source field (GSE48075) and re-annotated an endpoint with 1 event (GSE70768); read-only MyISAM tables rebuilt as writable copies with checksum verification",
-          "Endpoint annotation rule (>= 5 events) enforced per cohort; two cohorts with no survival table built from their source files (GSE5327 MFS, GSE7849 DFS); cohort-patient overlap detected from sample titles and recorded in the catalog (CohortGroup/Note)"),
+          "Endpoint annotation rule (>= 5 events) enforced per cohort; two cohorts with no survival table built from their source files (GSE5327 MFS, GSE7849 DFS); cohort-patient overlap detected from sample titles and recorded in the catalog (CohortGroup/Note)",
+          "CohortGroup / Note bookkeeping written back into the catalog without touching the data tables",
+          "16 TCGA cohorts added (catalog TCGA rows 15 -> 31); candidate GEO series screened and their annotations checked before inclusion",
+          "Supplementary-file and expansion builds for individual cohorts (GSE108474, GSE14520, the GEO expansion sets); GPL24676 extended additively for the two cBioPortal-hosted studies",
+          "Two small cohorts built and catalogued under the relaxed gate (N >= 30); GPL4133 Agilent platform name extended"),
         check.names = FALSE, stringsAsFactors = FALSE)
-      .methods_tbl(d)
+      tagList(
+        .methods_tbl(d),
+        p(class = "note", tags$code("pipeline/R/"), " holds ", tags$b("45 numbered steps"),
+          " (01–27, 35–38, 90–102; the table above lists every one of them) plus 9 helper,
+          demo and validation scripts (", tags$code("batch_integrate.R"),
+          ", ", tags$code("batch_integrate2.R"), ", ", tags$code("demo_meta_lung.R"),
+          ", ", tags$code("demo_tcga_integration.R"), ", ", tags$code("demo_tcga_ondemand.R"),
+          ", ", tags$code("demo_unified_reader.R"), ", ", tags$code("test_cpas_dataset.R"),
+          ", ", tags$code("test_cpas_GSE44001.R"), ", ", tags$code("validate_cpas.R"),
+          "), i.e. 54 R files.")
+      )
     })
 
     output$clean <- renderUI({
@@ -287,7 +320,7 @@ server_mod_methods <- function(id, dataset_info) {
                     "Token used as the default endpoint on the analysis pages",
                     "Tokens that are derived rather than directly reported",
                     "Platform of the expression table",
-                    "Samples in the expression table",
+                    "Analysable samples: expression and the EndpointPrimary time/status are both present (so N differs from n_expr for cohorts whose endpoint covers fewer samples)",
                     "Assay / data type"),
         UsedBy = c("every page", "Datasets filter, Multi-datasets grouping",
                    "Datasets table", "Datasets filter, all family selectors",

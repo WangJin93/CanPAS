@@ -350,7 +350,7 @@ loo_meta <- function(x) {
 #' @param cut_value \code{cut = "custom"} 时的阈值:单个有限数值,作用于 log2 表达
 #'   (或签名得分)。若某队列在阈值一侧没有病人,该队列记入 \code{empty_cohorts}
 #'   并附原因,不参与合并。
-#' @return class "cpas_km_pooled" 列表:
+#' @return 普通 \code{list}(没有 class 属性;不是 S3 对象,没有对应的方法分派):
 #'   \item{\code{df}:}{合并后的分析数据(time/status/marker/dataset/group)}
 #'   \item{\code{datasets}, \code{n_high}, \code{n_low}, \code{method}, \code{cutpoint}:}{纳入的数据集与分组规模}
 #'   \item{\code{dataset_endpoints}:}{各数据集实际使用的终点 token(命名向量)}

@@ -5,7 +5,7 @@
 \alias{dataset_info}
 \title{CanPAS dataset catalog}
 \format{
-A data.frame with columns \code{Accession}, \code{Type}, \code{GPL},
+A data.frame with 26 columns. \code{Accession}, \code{Type}, \code{GPL},
 \code{N}, \code{SurvivalTypes} (raw endpoint tokens) and the endpoint-family
 mapping added by the analysis plan B: \code{EndpointFamilies} (browsing
 families), \code{EP_OS}, \code{EP_DSS}, \code{EP_DFS}, \code{EP_PFS},
@@ -44,6 +44,17 @@ Two columns describe how a cohort may be used:
     \code{"no annotated endpoint"}. The App shows it on the Datasets page and
     warns on the multi-dataset pages when an overlapping pair is selected.}
 }
+
+Two bookkeeping columns are not used by the analysis functions:
+\describe{
+  \item{\code{X}}{Row index carried over from the pre-removal catalog (values
+    1–195, 179 distinct). Harmless residue; kept so the packaged table stays
+    cell-identical to \code{data/dataset_info.csv}.}
+  \item{\code{method}}{Assay / data type recorded for the cohort:
+    \code{"RNA"} (121), \code{"TCGA-RNAseq"} (31), \code{"RNA-seq"} (8),
+    \code{"array"} (1), \code{"SRA"} (1), and \code{NA} for the 17
+    lung-cancer GEO cohorts whose method was not recorded.}
+}
 Earlier releases recorded in \code{N} the planned/expression cohort size,
 which overstated the analysable sample count for many datasets (GSE31210 was
 listed as 133 while 226 tumours are analysable).
@@ -52,9 +63,11 @@ listed as 133 while 226 tumours are analysable).
 dataset_info
 }
 \description{
-One row per GEO dataset mirrored in the CanPAS database:
-accession, platform (GPL) and cancer type. Used by
-\code{\link{get_expr_data}} to find the platform of a dataset.
+One row per cohort in the CanPAS catalog — 179 rows: 143 GEO
+series, 31 TCGA projects, 3 CGGA glioma cohorts and 2 cBioPortal-hosted
+studies (\code{A5-PCPG}, \code{IMmotion150}) — with the accession, platform
+(GPL), cancer type and the endpoint / sample-size columns described below. Used
+by \code{\link{get_expr_data}} to find the platform of a dataset.
 }
 \examples{
   ## The catalog is the starting point of every real analysis: it records the

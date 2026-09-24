@@ -23,20 +23,63 @@ TCGA_SURV_RDA <- file.path(CPAS_DATA_ROOT, "data/tcga", "tcga_surv.rda")
   invisible(TRUE)
 }
 
-#' @title TCGA projects mirrored in CanPAS
-#' @description Named vector mapping TCGA project abbreviations to the cancer
-#' type labels used in CanPAS. Only these projects are available through the
-#' TCGA helpers.
-#' @format Named character vector.
-#' @export
-tcga_retained <- c(
-  LUAD = "Lung Cancer", LUSC = "Lung Cancer",
-  BRCA = "Breast Cancer", PRAD = "Prostate Cancer", STAD = "Gastric Cancer",
-  OV = "Ovarian Cancer", BLCA = "Bladder Cancer", CESC = "Cervical Cancer",
-  COAD = "Colorectal Cancer", READ = "Colorectal Cancer", LIHC = "Liver Cancer",
-  LAML = "Leukemia Cancer", PAAD = "Pancreatic Cancer", GBM = "Glioma Cancer",
-  LGG = "Glioma Cancer"
+# Supported TCGA projects — derived from the shipped catalog -----------------
+# The catalog (data/dataset_info.rda) is the single authority: every row whose
+# Accession starts with "TCGA-" is a TCGA cohort the helpers must accept, and
+# its Type column is the canonical cancer-type label. Hard-coding a second list
+# is what broke 16 of the 31 catalogued projects in 1.0.0, so the list below is
+# only the fallback used when the catalog cannot be read; the object actually
+# exported is refreshed from the catalog when the package is loaded (see
+# .onLoad at the end of this file), and tests/testthat/test-tcga.R fails as soon
+# as this fallback and the catalog disagree.
+.cpas_tcga_retained_builtin <- c(
+  BLCA = "Bladder Cancer", BRCA = "Breast Cancer", CESC = "Cervical Cancer",
+  COAD = "Colorectal Cancer", GBM = "Glioma Cancer", LAML = "Leukemia Cancer",
+  LGG = "Glioma Cancer", LIHC = "Liver Cancer", LUAD = "Lung Cancer",
+  LUSC = "Lung Cancer", OV = "Ovarian Cancer", PAAD = "Pancreatic Cancer",
+  PRAD = "Prostate Cancer", READ = "Colorectal Cancer", STAD = "Gastric Cancer",
+  KIRC = "Kidney Cancer", THCA = "Thyroid Cancer", HNSC = "Head and Neck Cancer",
+  SKCM = "Melanoma", KIRP = "Kidney Cancer", SARC = "Sarcoma",
+  ESCA = "Esophageal Cancer", UCEC = "Endometrial Cancer", PCPG = "Pheochromocytoma",
+  TGCT = "Testicular Cancer", THYM = "Thymoma", KICH = "Kidney Cancer",
+  MESO = "Mesothelioma", UVM = "Uveal Melanoma", ACC = "Adrenocortical Cancer",
+  UCS = "Uterine Carcinosarcoma"
 )
+
+# The project set actually used by the helpers: read once per session from the
+# packaged catalog, with the built-in vector above as the fallback.
+.cpas_tcga_projects <- local({
+  cache <- NULL
+  function() {
+    if (!is.null(cache)) return(cache)
+    from_catalog <- tryCatch({
+      di  <- .cpas_dataset_info()
+      acc <- as.character(di$Accession)
+      keep <- grepl("^TCGA-", acc)
+      lab <- as.character(di$Type)[keep]
+      proj <- toupper(sub("^TCGA-", "", acc[keep]))
+      ok <- nzchar(proj) & !is.na(lab) & nzchar(lab)
+      v <- lab[ok]
+      names(v) <- proj[ok]
+      v[!duplicated(names(v))]
+    }, error = function(e) NULL)
+    cache <<- if (length(from_catalog)) from_catalog else .cpas_tcga_retained_builtin
+    cache
+  }
+})
+
+#' @title TCGA projects available through the TCGA helpers
+#' @description Named vector mapping TCGA project abbreviations to the cancer
+#' type labels used in CanPAS. It is derived from the shipped catalog (every
+#' \code{\link{dataset_info}} row whose \code{Accession} starts with
+#' \code{"TCGA-"}; the \code{Type} column supplies the label), so it always
+#' agrees with the catalog and every listed project is accepted by
+#' \code{\link{tcga_project_dataset}}, \code{\link{tcga_surv_table}},
+#' \code{\link{tcga_merged}}, \code{\link{tcga_get_expr}} and
+#' \code{\link{canonical_type}}.
+#' @format Named character vector, one entry per TCGA cohort in the catalog.
+#' @export
+tcga_retained <- .cpas_tcga_retained_builtin
 
 #' @title Xena dataset id of a TCGA project
 #' @description Builds the UCSC Xena sampleMap/HiSeqV2 dataset id for a TCGA
@@ -47,9 +90,10 @@ tcga_retained <- c(
 #' @export
 tcga_project_dataset <- function(dataset) {
   project <- toupper(sub("^TCGA-", "", as.character(dataset)[1]))
-  if (!project %in% names(tcga_retained))
+  supported <- .cpas_tcga_projects()          # catalog-derived, never hard-coded
+  if (!project %in% names(supported))
     stop("Unsupported TCGA project: ", project,
-         ". Choose one of: ", paste(names(tcga_retained), collapse = ", "), ".")
+         ". Choose one of: ", paste(names(supported), collapse = ", "), ".")
   paste0("TCGA.", project, ".sampleMap/HiSeqV2")
 }
 
@@ -229,31 +273,35 @@ tcga_merged <- function(dataset = "LUAD", genes = c("TP53"), type = "OS") {
 }
 
 #' @title Canonical CanPAS cancer type of a TCGA project
-#' @param dataset TCGA dataset id (\code{"LUAD"} or \code{"TCGA-LUAD"}).
+#' @param dataset TCGA dataset id (\code{"LUAD"} or \code{"TCGA-LUAD"}). A GEO or
+#' CGGA accession is not a TCGA id and returns \code{NA}.
 #' @return The canonical cancer-type label or \code{NA_character_} when the
 #' project is unknown.
 #' @examples
-#'   ## Real accessions from the catalog, and the type label CanPAS reports.
-#'   canonical_type("GSE13507")
+#'   ## Real TCGA accessions from the catalog, and the type label CanPAS reports.
 #'   canonical_type("TCGA-LUAD")
-#'   canonical_type("GSE17538_GPL570")
+#'   canonical_type("TCGA-ACC")
+#'   canonical_type("TCGA-XXXX")   # unknown project -> NA
 #' @export
 canonical_type <- function(dataset) {
   project <- toupper(sub("^TCGA-", "", as.character(dataset)[1]))
-  if (project %in% names(tcga_retained)) unname(tcga_retained[[project]]) else NA_character_
+  supported <- .cpas_tcga_projects()          # catalog-derived, never hard-coded
+  if (project %in% names(supported)) unname(supported[[project]]) else NA_character_
 }
 
 #' @title Short dataset name of a TCGA project
+#' @description Prefixes a TCGA project id with \code{"TCGA-"}. Only the first
+#' element of \code{dataset} is used, and the input must be a TCGA id
+#' (\code{"LUAD"} or \code{"TCGA-LUAD"}) — a GEO accession such as
+#' \code{"GSE13507"} would come back as \code{"TCGA-GSE13507"}, which is why
+#' GEO cohorts are labelled by their catalog accessions instead.
 #' @param dataset TCGA dataset id (\code{"LUAD"} or \code{"TCGA-LUAD"}).
-#' @return \code{"TCGA-<PROJECT>"}.
+#' @return A single string, \code{"TCGA-<PROJECT>"} (only the first element of
+#' \code{dataset} is used).
 #' @examples
-#'   ## Short labels used in figures and tables.
-#'   short_name("GSE13507")
+#'   ## Short labels used in figures and tables (TCGA ids only).
+#'   short_name("LUAD")
 #'   short_name("TCGA-LUAD")
-#'   short_name("GSE31210")
-#'
-#'   ## Vectorised, so a whole selection can be labelled at once.
-#'   short_name(c("GSE14814", "GSE31210", "GSE37745"))
 #' @export
 short_name <- function(dataset) paste0("TCGA-", toupper(sub("^TCGA-", "", as.character(dataset)[1])))
 
@@ -336,4 +384,16 @@ cohort_merged <- function(dataset, genes = "TP53", type = "OS",
   attr(d, "endpoint") <- tok
   attr(d, "family") <- endpoint_family(tok)
   d
+}
+
+# Load-time refresh of the exported TCGA project table ------------------------
+# `tcga_retained` is a documented, exported object, so it cannot be a function
+# call; rebinding it here from the catalog keeps it equal to the set the
+# helpers accept (and to the catalog) for every session, without a second
+# hard-coded list. The built-in vector stays as the fallback if the catalog is
+# unreadable, which cannot make loading fail.
+.onLoad <- function(libname, pkgname) {
+  projects <- tryCatch(.cpas_tcga_projects(), error = function(e) NULL)
+  if (length(projects)) assign("tcga_retained", projects, envir = asNamespace(pkgname))
+  invisible()
 }
