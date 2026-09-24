@@ -19,7 +19,7 @@ What it adds to the usual single-cohort workflow:
 * **Numerical verification against reference implementations** (`survival`, `metafor`,
   `cmprsk`), including a competing-risks variance defect that the comparison exposed
   and this release corrects.
-* **A catalog, not just a downloader**: 174 catalogued cohorts in one schema, with
+* **A catalog, not just a downloader**: 177 catalogued cohorts in one schema, with
   sample sizes defined as analysable patients and with patient-overlap groups recorded.
 
 > Naming note: the package was originally created under the name "Cancer Patient
@@ -125,15 +125,22 @@ run_cpas_app()
 ## The catalog
 
 `data(dataset_info)` ships the catalog used by the app and by the paper:
-**174 cohorts — 140 GEO, 31 TCGA projects, 3 CGGA — across 29 cancer types**, and every
-row carries a resolved endpoint; together they contribute **36,645 analysable samples**
-(median 163 per cohort, range 36–1,210). Sample size means analysable patients:
+**177 cohorts — 141 GEO, 31 TCGA projects, 3 CGGA and 2 cBioPortal-hosted studies — across
+29 cancer types**, and every row carries a resolved endpoint; together they contribute
+**37,052 analysable samples** (median 163 per cohort, range 36–1,210). The two
+cBioPortal-hosted cohorts (A5-PCPG, Pheochromocytoma; IMmotion150, Kidney Cancer) are
+studies whose clinical and expression files are deposited together, not GEO series, so they
+are counted in their own bucket and the GEO count is 141 rather than 143. Sample size means
+analysable patients:
 expression data plus a non-missing time and status for the cohort's primary endpoint.
-Patient-overlap groups are recorded (30 pairs in 14 groups recomputed against this
-catalog by `pipeline/R/26_cohort_overlap.R`; the GSE25066–GSE32918 pair is a
-sample-title collision, since GSE32918's titles are panel replicate codes, not patient
-identifiers), and the multi-dataset pages warn when a selection contains two members of
-one group.
+Patient-overlap groups are recorded (29 pairs in 13 groups recomputed against this
+catalog by `pipeline/R/26_cohort_overlap.R`, with `data(dataset_info)$CohortGroup` and
+`$Note` carrying the result). One further title match — the GSE25066–GSE32918 pair — is
+a sample-title collision rather than shared patients, since GSE32918's titles are panel
+replicate codes for 172 patients and its genuine duplicate deposit (GSE69051) is not
+catalogued, so it is recorded as a note instead of a group
+(`pipeline/ref/cohort_overlap_exclude.csv`). The multi-dataset pages warn when a
+selection contains two members of one group.
 
 ## Endpoint families
 

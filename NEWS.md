@@ -4,6 +4,49 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Catalog expanded to 177 rows: three cohorts closing three cancer types
+
+Three cohorts built through the supplementary/bespoke route were added, each the first
+independent (non-TCGA) cohort for a cancer type that until now had only a TCGA project:
+**A5-PCPG** (Pheochromocytoma, N = 70, 19 OS events; cBioPortal clinical plus the same
+study's RNA-seq CPM, GPL24676), **IMmotion150** (Kidney Cancer, N = 263, 164 PFS events;
+cBioPortal clinical plus the same study's TPM, GPL24676) and **GSE3218** (Testicular Cancer,
+N = 74, 27 OS events; survival from the study's publication table via Europe PMC, expression
+from GEO GSE3218 on GPL96). The catalog now holds **177 cohorts across 29 cancer types**
+(141 GEO, 31 TCGA, 3 CGGA and **2 cBioPortal-hosted studies, which are not GEO series**),
+endpoint families **OS 127 / DSS 39 / DFS 93 / PFS 45 / MFS 17** (counts of non-NA `EP_*`)
+and **37,052 analysable samples** (median 163 per cohort, range 36-1,210).
+`16_verify_catalog_mirror.R` reports 0 errors / 0 warnings / 0 info; `data(dataset_info)`
+was rebuilt and verified cell-by-cell against the CSV (177 x 26 cells, 0 differences), and
+`19_fix_catalog_N.R` was not run. The two cBioPortal cohorts are counted in their own source
+bucket rather than as GEO, so the GEO count is 141 and not 143: their clinical and
+expression files are deposited together by the same study rather than through GEO.
+
+**Mirror change beyond the cohort uploads.** The DB table `GPL24676` was stale (38,594
+rows, built before the local probe map was extended), which left the two new cBioPortal
+cohorts only about 21-30 % queryable through the app's `ID_map -> <GPL> -> expr` path. An
+additive append of **26,137 probe-to-gene rows** (no row updated and none deleted) brings
+the table to 123,646 rows, matching `data/processed/gpl/GPL24676.rds`; coverage is now
+A5-PCPG 68.9 % and IMmotion150 64.8 %. Rollback artefact:
+`pipeline/backup/gpl_db_pre_suppl_20260924/GPL24676_db_rows.csv.gz`.
+
+Recorded rather than smoothed over:
+
+* **IMmotion150**'s PFS is measured from the start of ICI treatment (the trial endpoint),
+  matching the GSE159067 / GSE162520 convention, not from diagnosis.
+* **A5-PCPG**'s longest OS is 456 months on a censored patient, taken verbatim from the
+  source file, and the cBioPortal study's `cancerTypeId` is mislabelled `hnsc` although the
+  cohort is the A5 Consortium PPGL series.
+* **GSE3218**'s survival comes from the PMC4666461 S1 publication table (74 of its 108
+  patients land in GSE3218; the 34-patient GSE10783 validation arm is below the 50-patient
+  threshold and is not catalogued). GEO carries no clinical fields for GSE3218, and the
+  table's 2-year DFS / 5-year DSS columns are milestone binaries, so they were deliberately
+  not registered as DFS or DSS.
+
+The patient-overlap register is unchanged by this batch: recomputing it with
+`pipeline/R/26_cohort_overlap.R` (dry run) against the 177-row catalog still gives
+**29 pairs in 13 groups** among 32 cohorts.
+
 ## Catalog expanded with 19 GEO cohorts (155 -> 174 rows)
 
 Nineteen GEO cohorts built through the normal pipeline now carry expression, survival and
@@ -31,6 +74,17 @@ Three points are recorded rather than smoothed over:
   62 events** (the `included in_analysis` ROIs aggregated per patient); **102 of those
   patients have an OS time and 60 of them died**, and the 102/60 count is the GEO-side
   analysable figure in that row's `Note`.
+
+The patient-overlap register behind `CohortGroup` and `Note` was rewritten for the 174-row
+catalog with `pipeline/R/26_cohort_overlap.R --write`: **29 pairs in 13 groups** share
+patients (8 detected by sample title, 14 by the same-series/different-platform rule, 7 by
+the verified GEO seed list). One further title match — **GSE25066–GSE32918** — is a
+sample-title collision rather than a shared patient set: GSE32918's titles are panel
+replicate codes (`1`, `1_Rep1`, …; 77 of 249 titles) for 172 patients, its genuine
+duplicate deposit is GSE69051 (deliberately not catalogued) and the two cohorts are of
+different cancer types. It is therefore recorded as a `Note` instead of a group, listed in
+`pipeline/ref/cohort_overlap_exclude.csv`, and the script preserves the provenance notes
+already present in the catalog instead of overwriting the column.
 
 The offline GEO screen behind the batch was repaired in
 `pipeline/R/36_screen_geo_candidates.R` and `pipeline/R/37_geo_expansion_screen.R`: the
