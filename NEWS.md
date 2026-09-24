@@ -4,6 +4,44 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Catalog expanded with 19 GEO cohorts (155 -> 174 rows)
+
+Nineteen GEO cohorts built through the normal pipeline now carry expression, survival and
+GPL tables in the mirror: four head and neck (GSE65858, GSE117973, GSE27020, GSE159067),
+five melanoma (GSE65904, GSE198430, GSE198431, GSE22153 and the GeoMx cohort GSE325123),
+three sarcoma (GSE71118, GSE30929, GSE271517), four lymphoma (GSE31312, GSE32918,
+GSE23501, GSE248835), one uveal melanoma (GSE22138), one mesothelioma (GSE183088) and
+GSE162520. The catalog now holds **174 cohorts across 29 cancer types** (140 GEO, 31 TCGA,
+3 CGGA; `Lymphoma` is the new cancer type), endpoint families **OS 125 / DSS 39 / DFS 93 /
+PFS 44 / MFS 17** (counts of non-NA `EP_*`), and **36,645 analysable samples** (median 163
+per cohort, range 36-1,210). Every row carries a resolved endpoint and
+`16_verify_catalog_mirror.R` reports 0 errors / 0 warnings / 0 info; `data(dataset_info)`
+was rebuilt and verified cell-by-cell against the CSV.
+
+Three points are recorded rather than smoothed over:
+
+* **GSE162520** was labelled "Head and Neck" in the candidate list, but its GEO title, its
+  overall design ("92 patients with surgically treated NSCLC") and every per-patient
+  diagnosis are non-small cell lung cancer, so it is catalogued as **Lung Cancer**.
+* **GSE31312** (lymphoma) is catalogued at the clinical-table size **N = 475 / 172 events**;
+  joined to the GEO samples by depository id only **470 patients and 170 events** have an
+  expression profile (5 clinical ids have no GEO sample; 28 further GEO samples have no
+  clinical row). The GEO-side 470/170 is written into that row's `Note`.
+* **GSE325123** (melanoma, GeoMx DSP) is catalogued at the **patient level, N = 105 /
+  62 events** (the `included in_analysis` ROIs aggregated per patient); **102 of those
+  patients have an OS time and 60 of them died**, and the 102/60 count is the GEO-side
+  analysable figure in that row's `Note`.
+
+The offline GEO screen behind the batch was repaired in
+`pipeline/R/36_screen_geo_candidates.R` and `pipeline/R/37_geo_expansion_screen.R`: the
+survival-keyword hint no longer acts as a hard gate (it had silently dropped real cohorts
+such as GSE304059 and GSE22138), time/event roles are decided by the decoded token and the
+values rather than by the key text, the event column is chosen with the maximum-overlap
+time/event pair instead of the first decodable 0/1 column, and the header splitter was
+vectorised. On the re-scan the passing candidates went from 23 to 37 with no cohort
+dropped, and three parse defects that had reported GSE183088 as 1/1, GSE23501 with the
+wrong `status` and GSE30929/GSE71118 with no endpoint were corrected.
+
 ## Licence change to MIT, `flextable` made optional, author metadata
 
 * The package is now licensed **MIT** (`License: MIT + file LICENSE`; the full MIT text is in

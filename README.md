@@ -19,7 +19,7 @@ What it adds to the usual single-cohort workflow:
 * **Numerical verification against reference implementations** (`survival`, `metafor`,
   `cmprsk`), including a competing-risks variance defect that the comparison exposed
   and this release corrects.
-* **A catalog, not just a downloader**: 155 catalogued cohorts in one schema, with
+* **A catalog, not just a downloader**: 174 catalogued cohorts in one schema, with
   sample sizes defined as analysable patients and with patient-overlap groups recorded.
 
 > Naming note: the package was originally created under the name "Cancer Patient
@@ -125,12 +125,15 @@ run_cpas_app()
 ## The catalog
 
 `data(dataset_info)` ships the catalog used by the app and by the paper:
-**155 cohorts — 121 GEO, 31 TCGA projects, 3 CGGA — across 28 cancer types**, of which
-136 carry a resolved endpoint and together contribute **28,890 analysable samples**
-(median 165 per cohort). Sample size means analysable patients: expression data plus a
-non-missing time and status for the cohort's primary endpoint. Patient-overlap groups
-are recorded (26 pairs in 13 groups), and the multi-dataset pages warn when a selection
-contains two members of one group.
+**174 cohorts — 140 GEO, 31 TCGA projects, 3 CGGA — across 29 cancer types**, and every
+row carries a resolved endpoint; together they contribute **36,645 analysable samples**
+(median 163 per cohort, range 36–1,210). Sample size means analysable patients:
+expression data plus a non-missing time and status for the cohort's primary endpoint.
+Patient-overlap groups are recorded (30 pairs in 14 groups recomputed against this
+catalog by `pipeline/R/26_cohort_overlap.R`; the GSE25066–GSE32918 pair is a
+sample-title collision, since GSE32918's titles are panel replicate codes, not patient
+identifiers), and the multi-dataset pages warn when a selection contains two members of
+one group.
 
 ## Endpoint families
 
@@ -140,17 +143,17 @@ cohort and always reported.
 
 | Family | Tokens pooled | Cohorts |
 |---|---|---|
-| OS | OS | 97 |
-| DSS | DSS, CSS, BCSS | 22 |
-| DFS | DFS, RFS, EFS, DFI | 78 |
-| PFS | PFS, PFI | 23 |
-| MFS | MFS, DRFS | 14 |
+| OS | OS | 125 |
+| DSS | DSS, CSS, BCSS | 39 |
+| DFS | DFS, RFS, EFS, DFI | 93 |
+| PFS | PFS, PFI | 44 |
+| MFS | MFS, DRFS | 17 |
 
 `DFI` and `PFI` (TCGA) are derived from the original endpoint fields and are flagged as
 derived. Pooling inside a family and never across families is enforced by the package;
 a mixed-token pool warns, naming each cohort and its token. A separate browsing
 vocabulary widens the progression family to metastasis endpoints, so the Datasets page
-can show a PFS cohort count (37) larger than the pooling count (23).
+can show a PFS cohort count (61) larger than the pooling count (44).
 
 ## Statistical safeguards (read before quoting a result)
 
@@ -191,9 +194,9 @@ overlap warning and the caveats.
 
 | Source | Expression | Survival / clinical |
 |---|---|---|
-| GEO (134 cohorts) | CanPAS MySQL mirror over a public REST API | mirror table `<ACC>_surv` |
+| GEO (140 cohorts) | CanPAS MySQL mirror over a public REST API | mirror table `<ACC>_surv` |
 | CGGA (3 glioma cohorts) | mirror | mirror table `CGGA_<ID>_surv` |
-| TCGA (15 projects) | UCSC Xena, fetched per gene on demand | local `<CPAS_DATA_ROOT>/data/tcga/*.rda` |
+| TCGA (31 projects) | UCSC Xena, fetched per gene on demand | local `<CPAS_DATA_ROOT>/data/tcga/*.rda` |
 
 Cohort data remain the property of the original studies: cite the GEO/CGGA/TCGA
 accessions listed in `dataset_info` alongside any result.
