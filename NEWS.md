@@ -4,6 +4,70 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Catalog growth to 197 cohorts: GSE205209 added, column semantics clarified, two upload/verify hardenings (2026-09-25)
+
+The catalog now holds **197 cohorts (38,981 analysable samples)** across 29 cancer types:
+GEO 145, EMBL-EBI 14, TCGA 33, CGGA 3 and cBioPortal-hosted 2. Family coverage is now
+OS 142, DSS 41, DFS 98, PFS 49 and MFS 17; the cohort-by-family audit table is
+197 x 5 = 985 cells. No existing cohort, no cohort data file and no mirror table was
+modified (the one catalog edit is the appended row below).
+
+* **GSE205209 added as an endometrial-cancer OS cohort (NanoString `GPL27956`).** The series
+  was recruited as **29 patients** and delivered 60 paired primary/metastatic arrays
+  (6 of them all-`null`, leaving 54 usable sample columns), deduplicated primary-preferred to
+  the 29 subjects; **one patient (`USC9`) has no usable expression array at all**, so the
+  cohort is analysed at **N = 28**. The delivered survival table keeps **29 rows** with
+  **22 deaths**; `n_OS = 28` and `n_events = 21` are the OS endpoint restricted to the 28
+  analysable patients, so `n_surv` (29) and the 29-row table's event total (22) both differ
+  from the `N`-based figures by exactly that patient
+  (`pipeline/R/110_build_gse205209.R`, `111_register_gse205209.R`, `112_upload_gpl27956.R`;
+  the platform map holds 770 probe rows of which 756 carry a gene id). **The cohort sits one
+  patient below the `>= 30` relaxed gate and was admitted by an explicit author decision**,
+  recorded in the row's `Note` and in the exclusion register rather than silently. `TTR` is
+  deliberately *not* registered as an endpoint. It is the second Endometrial Cancer cohort
+  alongside `TCGA-UCEC`, which is why GEO gains a 25th cancer type (24 -> 25) while the union
+  stays at 29.
+* **Column semantics clarified.** The catalog's size columns now document one rule:
+  `N` is the samples present in **both** delivered tables with a usable *primary* endpoint;
+  `n_events` is that endpoint's events among exactly those `N`; **`n_<family>` applies the
+  same rule per family, independently of `N`, and may therefore exceed it**; `n_surv` is the
+  delivered survival-table row count; `n_expr` is the expression sample-column count. The
+  per-family independence is a property of the whole catalog, not of the new row: across the
+  197 rows `n_<family>` exceeds `N` in **7 cohort-by-family cells** (OS `GSE70768` 57 > 41;
+  DFS `GSE22226_GPL1708` 129 > 125; PFS `TCGA-BLCA` 426 > 425, `TCGA-LUSC` 543 > 542,
+  `TCGA-STAD` 445 > 443, `TCGA-SKCM` 456 > 455; MFS `GSE45255` 136 > 134). `GSE205209` is
+  the clearest single-row witness of all three rules at once: `N = 28` < `n_surv = 29`, and
+  `n_events = 21` < the survival table's 22 deaths. `README.md`'s "Column semantics" section
+  carries the extended table and this rule.
+* **`06_upload_db.R` hardened for a missing platform table.** A platform/GPL table that is
+  **absent** from the mirror is now uploaded **regardless of `n_expr`**, while an existing
+  platform table is still never overwritten. The earlier behaviour could leave a cohort's
+  expression table in the mirror with no annotation table to map its probes, a state the
+  verification script could not see.
+* **`16_verify_catalog_mirror.R` gained a second ERROR check** for exactly that state:
+  *expression table in the mirror but platform/GPL table is missing*. Together with the
+  earlier endpoint-column ERROR check, the script now reports **0 errors / 0 warnings /
+  0 info over 15 checks**, with **197/197 rows fully usable**, at the 197-row state.
+* **Known limitation, verified and deliberately not overwritten.** The `GPL16686` platform map
+  annotates **30,766 of 53,981 probes (56.99 %)**; the mirror matches that map **exactly**
+  (30,766 rows, 30,766 matched probes, **0 differing gene ids**, 0 mirror-only rows and 0 local
+  annotated probes absent from the mirror). The mirror is *not* stale: it was created from the
+  current 2026-09-24 22:22 map, and the temporary "35,637" figure that appeared in earlier
+  drafts of this entry was a **units error** — it is the row count after `99_extend_gpl_db.R`
+  splits multi-mapped probes on `" /// "` (2,076 such probes → 6,947 extra rows), not the
+  number of annotated probe rows. Improving the coverage would require regenerating the local
+  map (e.g. from `hugene20sttranscriptcluster.db`) and then an authorised in-place update of
+  the `NA` rows' `gene_id`, which the never-overwrite rule forbids today — recorded as a known
+  limitation, with no additive top-up possible. `16_verify_catalog_mirror.R` checks GPL
+  *presence*, not content.
+* **Downstream artefacts refreshed.** Additional file 2 was re-quoted so it is again
+  byte-identical to `pipeline/out/excluded.csv`; Additional file 1 was regenerated at
+  **197 x 5 = 985 cells** with 0 packaged-vs-CSV differences, 0
+  `endpoint_resolve`-vs-`endpoint_options` disagreements, 0 intra-family conflicts and 0
+  unmapped tokens; the curation-step inventory now reads **57 numbered steps / 66 R files**
+  (new: `110`-`112`); Figure 2 and Figure 9 were re-rendered from the 197-row build and the
+  Word/PDF export re-run.
+
 ## Catalog growth to 196 cohorts: GSE1379 restored, TCGA-CHOL and TCGA-DLBC added (2026-09-25)
 
 The catalog now holds **196 cohorts (38,953 analysable samples)** across 29 cancer types:

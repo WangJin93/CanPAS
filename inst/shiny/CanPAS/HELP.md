@@ -182,8 +182,8 @@ used as a time-to-event endpoint, and a token with (almost) no events (OS in
   and processed matrices rather than through GEO; the cBioPortal bucket holds the
   two studies whose clinical and expression files were deposited with the study
   on cBioPortal instead of as a GEO series (`A5-PCPG`, Pheochromocytoma;
-  `IMmotion150`, Kidney Cancer). The five buckets are GEO 144 / EMBL-EBI 14 /
-  TCGA 33 / CGGA 3 / cBioPortal-hosted 2 = 196 cohorts. The Datasets page shows
+  `IMmotion150`, Kidney Cancer). The five buckets are GEO 145 / EMBL-EBI 14 /
+  TCGA 33 / CGGA 3 / cBioPortal-hosted 2 = 197 cohorts. The Datasets page shows
   the source and links to the matching portal (NCBI GEO / ArrayExpress / CGGA /
   GDC / cBioPortal).
 - **Endpoint columns**: `SurvivalTypes` holds the raw tokens, `EndpointFamilies`
@@ -197,8 +197,8 @@ separately with its cohort count:
 
 | Filter | Meaning | Cohorts |
 |---|---|---|
-| Any | no family filter | 196 |
-| OS | overall survival | 141 |
+| Any | no family filter | 197 |
+| OS | overall survival | 142 |
 | DSS | disease-specific survival (DSS / CSS / BCSS) | 41 |
 | DFS | disease-free survival (DFS / RFS / EFS / DFI) | 98 |
 | PFS | progression-free survival (PFS / PFI) | 49 |
