@@ -135,12 +135,14 @@ ui_mod_methods <- function(id) {
         p("Some cohorts in the catalog are not independent: a study measured on two
           platforms appears as two accessions, and a few series were deposited twice
           under different GSE numbers. Comparing the sample titles across all cohorts
-          (", tags$code("26_cohort_overlap.R"), ") finds 29 such pairs (32 cohorts) in
-          13 groups,
+          (", tags$code("26_cohort_overlap.R"), ") finds 30 such pairs (33 cohorts) in
+          14 groups,
           e.g. GSE3494_GPL96/GPL97 (179 shared patients), GSE37642_GPL96/GPL97 (422),
           GSE9782_GPL96/GPL97 (264), GSE17536 and GSE17537 against GSE17538_GPL570
           (177 and 55), GSE2990 against GSE6532_GPL96 (189), GSE11969 against
-          GSE13213 (87) and GSE10885_GPL1390 against GSE20624_GPL1390 (91)."),
+          GSE13213 (87), GSE10885_GPL1390 against GSE20624_GPL1390 (91) and GSE1379
+          against GSE1378 (60: the same patients as whole-tissue sections and as
+          microdissected cells)."),
         p(class = "note", "Pooling two cohorts of the same group counts those patients
           more than once, which narrows the confidence interval and biases I², Q and
           the prediction interval — the reported precision is then partly an artefact
@@ -202,7 +204,8 @@ server_mod_methods <- function(id, dataset_info) {
                  "35–38 TCGA / GEO expansion",
                  "90–99 supplementary & expansion builds",
                  "100–102 relaxed gate & platform names",
-                 "103–107 EMBL-EBI platform maps, cohort builds & registration"),
+                 "103–107 EMBL-EBI platform maps, cohort builds & registration",
+                 "39–42 GSE1379 & TCGA-CHOL/DLBC"),
         Script = c("01_parse_gse.R", "02_gpl_map.R, 12_gpl_map_symbol.R",
                    "03_surv_table.R", "04_qc_report.R", "05_dataset_plan.R",
                    "06_upload_db.R", "07_standardize_clinical.R, 07b, 07c",
@@ -218,7 +221,8 @@ server_mod_methods <- function(id, dataset_info) {
                    "35_add_tcga_cohorts.R, 36_screen_geo_candidates.R, 37_geo_expansion_screen.R, 38_geo_expansion_annotation_check.R",
                    "90_build_gse108474_suppl.R, 91_complete_gse14520_surv.R, 92_build_geo_expansion_expr_pheno.R, 93_build_geo_expansion_bespoke.R, 94_update_catalog_geo_expansion.R, 95_build_suppl_expansion.R, 96_build_suppl_expansion.R, 98_update_catalog_suppl_expansion.R, 99_extend_gpl_db.R",
                    "100_build_relaxed_gate.R, 101_update_catalog_relaxed_gate.R, 102_extend_gpl4133_agilent_name.R",
-                   "103_build_embl_gpl_maps.R, 104_build_embl_cohorts.R, 105_update_catalog_embl.R, 106_build_embl_step2.R, 107_register_embl_step2.R"),
+                   "103_build_embl_gpl_maps.R, 104_build_embl_cohorts.R, 105_update_catalog_embl.R, 106_build_embl_step2.R, 107_register_embl_step2.R",
+                   "39_build_gse1379_surv.R, 40_add_tcga_chol_dlbc.R, 41_register_final3_rows.R, 42_upload_gpl1223.R"),
         What = c(
           "GEO series matrix -> expression table (ID_REF + one column per sample)",
           "Platform annotation -> probe to Entrez map; symbol-based mapping when the platform has no Entrez column",
@@ -244,18 +248,19 @@ server_mod_methods <- function(id, dataset_info) {
           "16 TCGA cohorts added (catalog TCGA rows 15 -> 31); candidate GEO series screened and their annotations checked before inclusion",
           "Supplementary-file and expansion builds for individual cohorts (GSE108474, GSE14520, the GEO expansion sets); GPL24676 extended additively for the two cBioPortal-hosted studies",
           "Two small cohorts built and catalogued under the relaxed gate (N >= 30); GPL4133 Agilent platform name extended",
-          "EMBL-EBI (ArrayExpress/BioStudies) cohorts built from the deposit's own SDRF annotation and processed matrix (CEL files re-processed by RMA where none was deposited); platform maps built from the GEO platform SOFT for GPL16686 and GPL17585, which have no annotation package; 14 cohorts catalogued at patient level and their endpoint families registered"),
+          "EMBL-EBI (ArrayExpress/BioStudies) cohorts built from the deposit's own SDRF annotation and processed matrix (CEL files re-processed by RMA where none was deposited); platform maps built from the GEO platform SOFT for GPL16686 and GPL17585, which have no annotation package; 14 cohorts catalogued at patient level and their endpoint families registered",
+          "GSE1379 survival table rebuilt from the series-matrix !Sample_description free text (the series has no characteristics rows); TCGA-CHOL and TCGA-DLBC added from UCSC Xena with local clinical tables; the three new catalog rows registered; GPL1223 platform map uploaded"),
         check.names = FALSE, stringsAsFactors = FALSE)
       tagList(
         .methods_tbl(d),
-        p(class = "note", tags$code("pipeline/R/"), " holds ", tags$b("50 numbered steps"),
-          " (01–27, 35–38, 90–107; the table above lists every one of them) plus 9 helper,
+        p(class = "note", tags$code("pipeline/R/"), " holds ", tags$b("54 numbered steps"),
+          " (01–27, 35–42, 90–107; the table above lists every one of them) plus 9 helper,
           demo and validation scripts (", tags$code("batch_integrate.R"),
           ", ", tags$code("batch_integrate2.R"), ", ", tags$code("demo_meta_lung.R"),
           ", ", tags$code("demo_tcga_integration.R"), ", ", tags$code("demo_tcga_ondemand.R"),
           ", ", tags$code("demo_unified_reader.R"), ", ", tags$code("test_cpas_dataset.R"),
           ", ", tags$code("test_cpas_GSE44001.R"), ", ", tags$code("validate_cpas.R"),
-          "), i.e. 59 R files.")
+          "), i.e. 63 R files.")
       )
     })
 

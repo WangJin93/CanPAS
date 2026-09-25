@@ -4,6 +4,56 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Catalog growth to 196 cohorts: GSE1379 restored, TCGA-CHOL and TCGA-DLBC added (2026-09-25)
+
+The catalog now holds **196 cohorts (38,953 analysable samples)** across 29 cancer types:
+GEO 144, EMBL-EBI 14, TCGA 33, CGGA 3 and cBioPortal-hosted 2. Family coverage is now
+OS 141, DSS 41, DFS 98, PFS 49 and MFS 17; the cohort-by-family audit table is
+196 x 5 = 980 cells. No existing cohort, no cohort data file and no mirror table was
+modified.
+
+* **GSE1379 restored as a breast-cancer DFS cohort.** 60 patients and 28 DFS events
+  (32 censored) on `GPL1223`, whole-tissue sections. The series has **no**
+  `!Sample_characteristics_ch1` rows at all: time and status live in the series-matrix
+  `!Sample_description` free text (`Clinical information: ...;DFS=<months>;Status=recur|non-recur`),
+  and the survival table was parsed from there
+  (`pipeline/R/39_build_gse1379_surv.R`, platform map `42_upload_gpl1223.R`). The
+  earlier record that the series had "no clinical annotation" was wrong and has been
+  corrected in the exclusion register.
+* **The same-patient set is now recorded.** GSE1378 is the microdissected-cell version of
+  the **same 60 patients** (identical 60/60 case ids). It stays uncatalogued, and the pair
+  is registered in `pipeline/ref/cohort_overlap_seed.csv` and in the catalog as
+  `CohortGroup = GSE1378(+1)` with an explanatory `Note`, so pooling counts those patients
+  once. `pipeline/R/26_cohort_overlap.R` now reports **30 pairs in 14 groups (33 cohorts)**
+  where it previously reported 29 in 13 (32); the app's Methods page and `HELP.md` were
+  updated to match.
+* **TCGA-CHOL (45 patients, 23 OS events) and TCGA-DLBC (47 patients, 9 OS events) added.**
+  Both are Xena-backed (`expr_in_mirror = FALSE`): expression is fetched per gene on demand
+  and the clinical/survival tables are local, so neither adds a mirror table
+  (`pipeline/R/40_add_tcga_chol_dlbc.R`, `41_register_final3_rows.R`). TCGA-CHOL is
+  registered under the existing **Liver Cancer** type, the same vocabulary already used for
+  the earlier ICC cohort E-MTAB-6389, so no new cancer type is introduced; TCGA-DLBC joins
+  the existing **Lymphoma** type. Each carries four endpoints (CHOL: OS 45/23, DSS 43/20,
+  DFI 32/12, PFI 45/24; DLBC: OS 47/9, DSS 47/4, DFI 27/4, PFI 47/12). **TCGA-DLBC is
+  thin** — only 9 OS events — and its OS time distribution contains a `time = 0` row, which
+  the methods pages discuss alongside other zero-follow-up rows.
+* **`16_verify_catalog_mirror.R` gained an ERROR check.** A row that is endpoint-annotated,
+  or has a survival table, while every `EP_*` column is `NA` silently disappears from every
+  family and from family-paired pooling. That condition is now an **ERROR** (the earlier
+  `SurvivalTypes`-based "rows without endpoint annotation" count cannot see it). At the
+  196-row state the script reports **0 errors / 0 warnings / 0 info**, 196/196 rows fully
+  usable.
+* **Additional file 2 refreshed.** The delivered exclusion list was a 2026-09-15 snapshot of
+  35 records while the authoritative register `pipeline/out/excluded.csv` had grown to
+  **109 records** over 106 accessions (74 added since that snapshot, four reasons corrected
+  this round: GSE1378, GSE1379, GSE21501, GSE35629). The file is now a byte-identical copy of
+  the register, the three superseded-append pairs (`GSE33630`, `GSE60542`, `GSE205209`) are
+  documented, and the paper's Table 1 Block C count and its cross-reference were corrected
+  (109, pointing at Additional file 2 rather than Additional file 3).
+* **App and Help text refreshed with the new counts**, the new overlap pair and the new
+  curation steps 39-42 (54 numbered steps, 63 R files); Figure 2 and Figure 9 were re-rendered
+  from the 196-row build and the Word/PDF export re-run.
+
 ## Catalog growth to 193 cohorts: fourteen EMBL-EBI cohorts added (2026-09-25)
 
 The catalog now holds **193 cohorts (38,801 analysable samples)** in **five** source

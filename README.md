@@ -20,7 +20,7 @@ What it adds to the usual single-cohort workflow:
 * **Numerical verification against reference implementations** (`survival`, `metafor`,
   `cmprsk`), including a competing-risks variance defect that the comparison exposed
   and this release corrects.
-* **A catalog, not just a downloader**: 193 catalogued cohorts in one schema, with
+* **A catalog, not just a downloader**: 196 catalogued cohorts in one schema, with
   sample sizes defined as analysable patients and with patient-overlap groups recorded.
 
 > Naming note: the package was originally created under the name "Cancer Patient
@@ -126,15 +126,15 @@ run_cpas_app()
 ## The catalog
 
 `data(dataset_info)` ships the catalog used by the app and by the paper:
-**193 cohorts — 143 GEO, 14 EMBL-EBI (ArrayExpress/BioStudies), 31 TCGA projects, 3 CGGA
+**196 cohorts — 144 GEO, 14 EMBL-EBI (ArrayExpress/BioStudies), 33 TCGA projects, 3 CGGA
 and 2 cBioPortal-hosted studies — across 29 cancer types**, and every row carries a resolved
-endpoint; together they contribute **38,801 analysable samples** (median 155 per cohort,
+endpoint; together they contribute **38,953 analysable samples** (median 149 per cohort,
 range 30–1,210). Two source groups are deliberately kept out of GEO: the fourteen EMBL-EBI
 cohorts (`E-MTAB-*`, `E-TABM-*`, `E-MEXP-*`) are ArrayExpress/BioStudies deposits retrieved
 from their own SDRF annotation and processed matrices rather than through GEO's mirror
 actions, and the two cBioPortal-hosted cohorts (A5-PCPG, Pheochromocytoma; IMmotion150,
 Kidney Cancer) are studies whose clinical and expression files are deposited together;
-counting either as GEO would give 157 or 145 instead of 143. A small number of
+counting either as GEO would give 158 or 146 instead of 144. A small number of
 cohorts carry only 30–40 patients and are flagged as such in the catalog `Note` field (the
 admission gate was relaxed from > 50 to >= 30 patients per cohort for these additions).
 Sample size means
@@ -150,21 +150,27 @@ The four size columns are not interchangeable, and one rule fixes all of them:
 | `N` | **Analysable samples** — present in both the delivered expression and survival tables and carrying a usable *primary* endpoint (status and time non-missing). |
 | `n_events` | Events of the **primary** endpoint **among those `N` samples** — not the event total of the survival table. |
 | `n_surv` | Row count of the delivered survival table, **including** rows with no usable endpoint. |
-| `n_expr` | Sample columns of the delivered expression table; `NA` for the 31 TCGA cohorts, which are fetched on demand from `<CPAS_DATA_ROOT>/data/tcga/*.rda` and never mirrored. |
+| `n_expr` | Sample columns of the delivered expression table; `NA` for the 33 TCGA cohorts, which are fetched on demand from `<CPAS_DATA_ROOT>/data/tcga/*.rda` and never mirrored. |
 
 **Which layer is authoritative:** the delivered local artefacts — the expression `.rds`
 under `data/expr/` and the survival tables under `data/processed/surv/` — are the source of
 truth. The MySQL mirror and the packaged `dataset_info` object are downstream copies, and
 `pipeline/R/16_verify_catalog_mirror.R` checks both against the local artefacts (at the
-193-row state it reports 0 errors / 0 warnings / 0 info, 193/193 rows fully usable).
+196-row state it reports 0 errors / 0 warnings / 0 info, 196/196 rows fully usable). It
+raises an **ERROR** when a row is endpoint-annotated, or has a survival table, yet every
+`EP_*` column is `NA`.
 
 This convention is why a survival table with 522 rows can carry `n_surv = 522`,
 `N = 476` and `n_events = 397` at the same time (GSE108474): 397 is the number of events
 among the 476 analysable samples, while 404 is the event count over all 522 rows — a
 different quantity, and not the one the catalog records.
-Patient-overlap groups are recorded (29 pairs in 13 groups recomputed against this
+Patient-overlap groups are recorded (30 pairs in 14 groups recomputed against this
 catalog by `pipeline/R/26_cohort_overlap.R`, with `data(dataset_info)$CohortGroup` and
-`$Note` carrying the result). One further title match — the GSE25066–GSE32918 pair — is
+`$Note` carrying the result). The most recent pair is GSE1379 × GSE1378: the same 60 breast
+patients deposited twice (whole-tissue sections and microdissected cells), recorded in
+`pipeline/ref/cohort_overlap_seed.csv` and in the catalog as `CohortGroup = GSE1378(+1)`;
+both series carry their DFS time and status in the series-matrix `!Sample_description`
+free text rather than in `!Sample_characteristics_ch1`. One further title match — the GSE25066–GSE32918 pair — is
 a sample-title collision rather than shared patients, since GSE32918's titles are panel
 replicate codes for 172 patients and its genuine duplicate deposit (GSE69051) is not
 catalogued, so it is recorded as a note instead of a group
@@ -179,17 +185,17 @@ cohort and always reported.
 
 | Family | Tokens pooled | Cohorts |
 |---|---|---|
-| OS | OS | 139 |
-| DSS | DSS, CSS, BCSS | 39 |
-| DFS | DFS, RFS, EFS, DFI | 95 |
-| PFS | PFS, PFI | 47 |
+| OS | OS | 141 |
+| DSS | DSS, CSS, BCSS | 41 |
+| DFS | DFS, RFS, EFS, DFI | 98 |
+| PFS | PFS, PFI | 49 |
 | MFS | MFS, DRFS | 17 |
 
 `DFI` and `PFI` (TCGA) are derived from the original endpoint fields and are flagged as
 derived. Pooling inside a family and never across families is enforced by the package;
 a mixed-token pool warns, naming each cohort and its token. A separate browsing
 vocabulary widens the progression family to metastasis endpoints, so the Datasets page
-can show a PFS cohort count (64) larger than the pooling count (47).
+can show a PFS cohort count (66) larger than the pooling count (49).
 
 ## Statistical safeguards (read before quoting a result)
 
@@ -230,10 +236,10 @@ overlap warning and the caveats.
 
 | Source | Expression | Survival / clinical |
 |---|---|---|
-| GEO (143 cohorts) | CanPAS MySQL mirror over a public REST API | mirror table `<ACC>_surv` |
+| GEO (144 cohorts) | CanPAS MySQL mirror over a public REST API | mirror table `<ACC>_surv` |
 | EMBL-EBI (14 cohorts) | the deposit's own processed matrix, or CEL files re-processed by RMA | SDRF annotation fields, resolved to patient level |
 | CGGA (3 glioma cohorts) | mirror | mirror table `CGGA_<ID>_surv` |
-| TCGA (31 projects) | UCSC Xena, fetched per gene on demand | local `<CPAS_DATA_ROOT>/data/tcga/*.rda` |
+| TCGA (33 projects) | UCSC Xena, fetched per gene on demand | local `<CPAS_DATA_ROOT>/data/tcga/*.rda` |
 | cBioPortal-hosted (2 cohorts) | mirror (the study's own RNA-seq matrix) | clinical patient files deposited with the study |
 | cBioPortal-hosted (2 studies) | mirror (RNA-seq deposited with the study) | same studies' clinical files, loaded as local survival tables |
 

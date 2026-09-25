@@ -30,8 +30,8 @@ TCGA_SURV_RDA <- file.path(CPAS_DATA_ROOT, "data/tcga", "tcga_surv.rda")
 # is what broke 16 of the 31 catalogued projects in 1.0.0, so the list below is
 # only the fallback used when the catalog cannot be read; the object actually
 # exported is refreshed from the catalog when the package is loaded (see
-# .onLoad at the end of this file), and tests/testthat/test-tcga.R fails as soon
-# as this fallback and the catalog disagree.
+# .onLoad at the end of this file), and tests/testthat/test-tcga-catalog.R fails
+# as soon as this fallback and the catalog disagree.
 .cpas_tcga_retained_builtin <- c(
   BLCA = "Bladder Cancer", BRCA = "Breast Cancer", CESC = "Cervical Cancer",
   COAD = "Colorectal Cancer", GBM = "Glioma Cancer", LAML = "Leukemia Cancer",
@@ -43,7 +43,7 @@ TCGA_SURV_RDA <- file.path(CPAS_DATA_ROOT, "data/tcga", "tcga_surv.rda")
   ESCA = "Esophageal Cancer", UCEC = "Endometrial Cancer", PCPG = "Pheochromocytoma",
   TGCT = "Testicular Cancer", THYM = "Thymoma", KICH = "Kidney Cancer",
   MESO = "Mesothelioma", UVM = "Uveal Melanoma", ACC = "Adrenocortical Cancer",
-  UCS = "Uterine Carcinosarcoma"
+  UCS = "Uterine Carcinosarcoma", CHOL = "Liver Cancer", DLBC = "Lymphoma"
 )
 
 # The project set actually used by the helpers: read once per session from the
