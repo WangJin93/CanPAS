@@ -4,12 +4,37 @@
 \alias{plot_meta_forest}
 \title{整合分析森林图}
 \usage{
-plot_meta_forest(x, digits = 4, ...)
+plot_meta_forest(
+  x,
+  digits = 4,
+  show_stars = TRUE,
+  label_size = 4.2,
+  star_size = NULL,
+  y_headroom = 3.6,
+  x_frac = 0.02,
+  label_lift = 1,
+  label_where = c("inside", "subtitle"),
+  ...
+)
 }
 \arguments{
 \item{x}{一个 \code{cpas_meta} 对象。}
 
 \item{digits}{图中标注保留的小数位(默认 4)。}
+
+\item{show_stars}{是否在面板左缘绘制逐队列显著性星号(\code{*} p<0.05、\code{**} p<0.01、\code{***} p<0.001)，默认 \code{TRUE}。}
+
+\item{label_size}{合并 HR / 95\% PI 标注的字号(默认 4.2)。}
+
+\item{star_size}{星号与 \code{Overall} 文字的字号，默认 \code{0.85 * label_size}。}
+
+\item{y_headroom}{y 轴顶部留白，避免 Overall 菱形及其 CI 被面板裁切(默认 3.6)。}
+
+\item{x_frac}{面板左缘起的横向比例位置，用于锚定星号与合并标注(默认 0.02)。}
+
+\item{label_lift}{合并标注相对 Overall 行的纵向偏移(默认 1)。}
+
+\item{label_where}{合并标注位置：\code{"inside"} 置于面板左上角内，\code{"subtitle"} 置于面板上方(默认 \code{"inside"})。}
 
 \item{...}{保留，暂未使用。}
 }
@@ -18,6 +43,11 @@ ggplot 对象。
 }
 \description{
 绘制 \code{\link{cpas_meta}} 的逐队列 HR(95\% CI) 与合并 HR 森林图。
+}
+\details{
+自本版起，星号与合并标注锚定在由固定坐标轴留白反推得到的\strong{有限}数据值上
+(不再用 \code{x = -Inf}：那会经 \code{log10} 变成 \code{NaN}，文本图层被静默丢弃并告警)。
+逐队列显著性星号位于面板内左缘，合并 HR / 95\% PI 标注默认置于面板左上角内。
 }
 \examples{
 \dontrun{

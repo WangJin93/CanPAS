@@ -252,46 +252,109 @@ print.cpas_meta <- function(x, ...) {
 #' @description 绘制 \code{\link{cpas_meta}} 的逐队列 HR(95\% CI) 与合并 HR 森林图。
 #' @param x 一个 \code{cpas_meta} 对象。
 #' @param digits 图中标注保留的小数位(默认 4)。
+#' @param show_stars 是否在面板左缘绘制逐队列显著性星号(\code{*} p<0.05、\code{**} p<0.01、\code{***} p<0.001)，默认 \code{TRUE}。
+#' @param label_size 合并 HR / 95\% PI 标注的字号(默认 4.2)。
+#' @param star_size 星号与 \code{Overall} 文字的字号，默认 \code{0.85 * label_size}。
+#' @param y_headroom y 轴顶部留白，避免 Overall 菱形及其 CI 被面板裁切(默认 3.6)。
+#' @param x_frac 面板左缘起的横向比例位置，用于锚定星号与合并标注(默认 0.02)。
+#' @param label_lift 合并标注相对 Overall 行的纵向偏移(默认 1)。
+#' @param label_where 合并标注位置：\code{"inside"} 置于面板左上角内，\code{"subtitle"} 置于面板上方(默认 \code{"inside"})。
 #' @param ... 保留，暂未使用。
 #' @return ggplot 对象。
+#' @details
+#' 自本版起，星号与合并标注锚定在由固定坐标轴留白反推得到的\strong{有限}数据值上
+#' (不再用 \code{x = -Inf}：那会经 \code{log10} 变成 \code{NaN}，文本图层被静默丢弃并告警)。
+#' 逐队列显著性星号位于面板内左缘，合并 HR / 95\% PI 标注默认置于面板左上角内。
 #' @examples
 #' \dontrun{
 #'    m <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS")
 #'    plot_meta_forest(m, digits = 4)
 #' }
 #' @export
-plot_meta_forest <- function(x, digits = 4, ...) {
+plot_meta_forest <- function(x, digits = 4,
+                             show_stars = TRUE,
+                             label_size = 4.2,
+                             star_size  = NULL,
+                             y_headroom = 3.6,
+                             x_frac = 0.02,
+                             label_lift = 1.00,
+                             label_where = c("inside", "subtitle"), ...) {
+  label_where <- match.arg(label_where)
   pc <- x$per_dataset
   po <- x$pooled
   pc$se <- ifelse(pc$se <= 0, NA, pc$se)
   w <- ifelse(is.na(pc$se), 0, 1 / pc$se^2)
   pc$w <- w
-  pc$label <- sprintf(paste0("%.", digits, "f [%.", digits, "f, %.", digits, "f]"),
-                       pc$HR, pc$lower, pc$upper)
   order_t <- pc$dataset
-  # NOTE: the per-dataset column is `dataset` (renamed from `table` in 0.4.x);
-  # referencing a bare `table` here would resolve to base::table() and break the plot
   pc$dataset <- factor(pc$dataset, levels = rev(order_t))
-  p <- ggplot(pc, aes(x = HR, y = dataset)) +
-    geom_point(size = 3 * sqrt(pc$w) / max(sqrt(pc$w)) + 1, color = "steelblue") +
-    geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.25, color = "grey30") +
-    geom_vline(xintercept = 1, linetype = 2, color = "grey40") +
-    geom_point(data = data.frame(HR = po$HR), aes(x = HR, y = po$k + 1), shape = 18,
-               size = 6, color = "firebrick", inherit.aes = FALSE) +
-    geom_errorbarh(data = data.frame(HR = po$HR, lower = po$lower, upper = po$upper),
-                   aes(xmin = lower, xmax = upper, y = po$k + 1), height = 0.15,
-                   color = "firebrick", inherit.aes = FALSE) +
-    scale_x_log10() +
-    labs(title = paste0("Meta forest: ", x$input$marker, " (", x$input$type, ", ",
-                        x$input$method, ")"),
-         x = "Hazard ratio (95% CI, log scale)", y = NULL) +
-    theme_bw() +
-    annotate("text", x = min(pc$lower, na.rm=TRUE)/2, y = po$k + 1,
-             label = if (is.finite(po$pi_lower))
-               sprintf(paste0("Pooled HR %.", digits, "f [%.", digits, "f, %.", digits, "f] | I2=%.0f%% | 95%% PI [%.", digits, "f, %.", digits, "f]"),
-                       po$HR, po$lower, po$upper, 100 * po$I2, po$pi_lower, po$pi_upper)
-             else sprintf(paste0("Pooled HR %.", digits, "f [%.", digits, "f, %.", digits, "f], I2=%.0f%%"),
-                          po$HR, po$lower, po$upper, 100 * po$I2), hjust = 0)
+  k <- nrow(pc)
+  y_overall <- k + 1                      # Overall 行所在的离散 y
+  if (is.null(star_size)) star_size <- 0.85 * label_size
+  PT <- 2.845                             # ggplot size -> pt
+  ## 面板 x 边界（对数空间 5% 比例留白）：lo/hi 为面板左右缘对应的数据值
+  lo_d <- min(pc$lower, na.rm = TRUE); hi_d <- max(pc$upper, na.rm = TRUE)
+  Rlog <- log10(hi_d) - log10(lo_d)
+  lo <- 10^(log10(lo_d) - 0.05 * Rlog); hi <- 10^(log10(hi_d) + 0.05 * Rlog)
+  frac_x <- function(f) 10^(log10(lo) + f * (log10(hi) - log10(lo)))   # 面板内固定比例 -> 有限数据值
+  x_anchor <- frac_x(x_frac)
+
+  ## 合并标注文本（两行；内容与包内一致）
+  pooled_lab <- if (is.finite(po$pi_lower))
+    sprintf(paste0("Pooled HR %.", digits, "f [%.", digits, "f, %.", digits, "f] | I2=%.0f%%\n",
+                   "95%% PI [%.", digits, "f, %.", digits, "f]"),
+            po$HR, po$lower, po$upper, 100 * po$I2, po$pi_lower, po$pi_upper)
+  else sprintf(paste0("Pooled HR %.", digits, "f [%.", digits, "f, %.", digits, "f], I2=%.0f%%"),
+               po$HR, po$lower, po$upper, 100 * po$I2)
+
+  ## ③ 星号文本（按行；x 由面板比例决定，与 HR 数值无关）
+  st <- rep("", k)
+  if (isTRUE(show_stars) && "p" %in% names(pc)) {
+    pv <- suppressWarnings(as.numeric(pc$p))
+    st <- ifelse(is.na(pv), "",
+          ifelse(pv < 0.001, "***",
+          ifelse(pv < 0.01,  "**",
+          ifelse(pv < 0.05,  "*", ""))))
+  }
+  ## 行对齐：直接复用 pc$dataset 这个**同一个因子**作 y 美学，星号便与它自己的队列行
+  ## 一同落在离散轴的同一位置上（v7 原用 y = seq_len(k) 的数值 1..k，而 levels = rev(order_t)
+  ## 使数据第 i 行位于面板第 k-i+1 位，于是星号整列被上下镜像到错误队列上）。
+  star_df <- data.frame(dataset = pc$dataset, st = st, stringsAsFactors = FALSE)
+
+  p <- ggplot2::ggplot(pc, ggplot2::aes(x = HR, y = dataset)) +
+    ggplot2::geom_point(size = 3 * sqrt(pc$w) / max(sqrt(pc$w)) + 1, color = "steelblue") +
+    ggplot2::geom_errorbar(ggplot2::aes(xmin = lower, xmax = upper),
+                           orientation = "y", width = 0.25, color = "grey30") +
+    ggplot2::geom_vline(xintercept = 1, linetype = 2, color = "grey40") +
+    ## Overall 行（红菱形 + CI），靠顶部留白保证在框内
+    ggplot2::geom_point(data = data.frame(HR = po$HR), ggplot2::aes(x = HR, y = y_overall),
+                        shape = 18, size = 6, color = "firebrick", inherit.aes = FALSE) +
+    ggplot2::geom_errorbar(data = data.frame(HR = po$HR, lower = po$lower, upper = po$upper),
+                           ggplot2::aes(xmin = lower, xmax = upper, y = y_overall),
+                           orientation = "y", width = 0.15, color = "firebrick", inherit.aes = FALSE) +
+    ## x 轴只留右侧少量空白（左侧不再需要为文本让位）
+    ggplot2::scale_x_log10(expand = ggplot2::expansion(mult = c(0.05, 0.05))) +
+    ggplot2::scale_y_discrete(expand = ggplot2::expansion(add = c(0.6, y_headroom))) +
+    ggplot2::labs(title = paste0("Meta forest: ", x$input$marker, " (", x$input$type, ", ",
+                                 x$input$method, ")"),
+                  x = "Hazard ratio (95% CI, log scale)", y = NULL) +
+    ggplot2::theme_bw() +
+    ## ③ 星号（x = 面板左缘起固定比例，y = 各队列行）
+    ggplot2::geom_text(data = star_df, ggplot2::aes(x = x_anchor, y = dataset, label = st),
+                       inherit.aes = FALSE, hjust = 0, size = star_size,
+                       fontface = "bold", colour = "grey20") +
+    ## Overall 文字（同一列）
+    ggplot2::annotate("text", x = x_anchor, y = y_overall, label = "Overall",
+                      hjust = 0, size = star_size, fontface = "bold", colour = "firebrick") +
+    ## ② 合并标注：inside = 面板内（同一列、Overall 行之上）；subtitle = 面板上方
+    { if (label_where == "inside")
+        ggplot2::annotate("text", x = x_anchor, y = y_overall + label_lift, label = pooled_lab,
+                          hjust = 0, vjust = 0, size = label_size, colour = "grey15") } +
+    { if (label_where == "subtitle")
+        ggplot2::labs(subtitle = pooled_lab) } +
+    { if (label_where == "subtitle")
+        ggplot2::theme(plot.subtitle = ggplot2::element_text(size = label_size,
+                                                             hjust = 0, colour = "grey15",
+                                                             margin = ggplot2::margin(b = 4))) }
   p
 }
 
