@@ -3,7 +3,7 @@
 `CanPAS` is an R package for survival analysis of public cancer cohorts. It serves
 expression matrices and survival tables from a curated GEO/CGGA mirror over a public
 REST API, from EMBL-EBI ArrayExpress/BioStudies deposits and from TCGA (UCSC Xena
-expression plus local clinical tables), and exposes
+expression plus clinical/survival tables bundled with the package), and exposes
 one uniform **merged-data schema** to Kaplan–Meier, Cox, time-dependent ROC,
 cross-cohort meta-analysis, pooled Kaplan–Meier and competing-risks analyses. A bundled
 Shiny application drives the same exported functions.
@@ -64,14 +64,14 @@ install.packages(c("shiny", "DT", "bs4Dash", "shinyWidgets", "shinycssloaders",
 
 | Variable / option | Used for |
 |---|---|
-| `CPAS_DATA_ROOT` | local TCGA clinical/survival tables (`<root>/data/tcga/*.rda`) and cohort clinical covariates in the app. **No default path is assumed**: unset, the GEO/CGGA mirror and UCSC Xena still work, but the TCGA helpers stop with instructions. |
+| `CPAS_DATA_ROOT` | **optional override**, needed only to read cohort clinical covariates in the app or to use a project checkout's `<root>/data/tcga/*.rda` instead of the tables bundled with the package. Unset, TCGA cohorts work out of the box (the clinical/survival tables ship inside CanPAS) and the GEO/CGGA mirror and UCSC Xena work as usual. |
 | `CPAS_DB_PASSWORD` | the curation pipeline that maintains the mirror (never hard-coded in the package) |
 | `options(CanPAS.cache_dir=)`, `CANPAS_CACHE_DIR` | where downloaded answers are cached |
 | `options(CanPAS.cache=)`, `CANPAS_CACHE` | switch the cache off |
 | `options(CanPAS.cache_ttl=)` | cache lifetime in seconds (30 days by default) |
 
 ```r
-Sys.setenv(CPAS_DATA_ROOT = "/path/to/CanPAS-data-root")   # for TCGA and clinical covariates
+Sys.setenv(CPAS_DATA_ROOT = "/path/to/CanPAS-data-root")   # optional override; not needed for TCGA
 ```
 
 GEO and CGGA data are read from the public CanPAS mirror API
@@ -154,7 +154,7 @@ The size columns are not interchangeable, and one rule fixes all of them:
 | `n_events` | Events of the **primary** endpoint **among those `N` samples** — not the event total of the survival table. |
 | `n_<family>` | The same rule applied **per family** — samples with a usable endpoint *of that family* — counted **independently of `N`**, so `n_OS`, `n_DSS`, `n_DFS`, `n_PFS` and `n_MFS` may each **exceed** `N`. `NA` when the cohort carries no endpoint in that family. |
 | `n_surv` | Row count of the delivered survival table, **including** rows with no usable endpoint. |
-| `n_expr` | Sample columns of the delivered expression table; `NA` for the 33 TCGA cohorts, which are fetched on demand from `<CPAS_DATA_ROOT>/data/tcga/*.rda` and never mirrored. |
+| `n_expr` | Sample columns of the delivered expression table; `NA` for the 33 TCGA cohorts, whose expression is fetched on demand from UCSC Xena and whose clinical/survival tables ship inside the package (`tcga_local_tables()` reports the resolved copies) and are never mirrored. |
 
 `N` and `n_events` therefore describe one endpoint (the primary one), while `n_<family>`
 describes each family separately. The independence is real, not an artefact of a single row:
@@ -254,7 +254,7 @@ overlap warning and the caveats.
 | GEO (145 cohorts) | CanPAS MySQL mirror over a public REST API | mirror table `<ACC>_surv` |
 | EMBL-EBI (14 cohorts) | the deposit's own processed matrix, or CEL files re-processed by RMA | SDRF annotation fields, resolved to patient level |
 | CGGA (3 glioma cohorts) | mirror | mirror table `CGGA_<ID>_surv` |
-| TCGA (33 projects) | UCSC Xena, fetched per gene on demand | local `<CPAS_DATA_ROOT>/data/tcga/*.rda` |
+| TCGA (33 projects) | UCSC Xena, fetched per gene on demand | clinical/survival tables bundled with the package (`inst/extdata/tcga/*.rda`); `CPAS_DATA_ROOT` overrides them with a project checkout |
 | cBioPortal-hosted (2 cohorts) | mirror (the study's own RNA-seq matrix) | clinical patient files deposited with the study, loaded as local survival tables |
 
 Cohort data remain the property of the original studies: cite the GEO/CGGA/TCGA

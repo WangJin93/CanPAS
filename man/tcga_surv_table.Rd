@@ -15,8 +15,10 @@ tcga_surv_table(dataset = "LUAD", endpoints = c("OS", "DSS", "DFI", "PFI"))
 data.frame (see description).
 }
 \description{
-Loads the local TCGA clinical and survival tables (copied into
-the CanPAS data tree) and returns one row per tumour sample of a project, with
+Loads the local TCGA clinical and survival tables (bundled with
+the package; see \code{\link{tcga_local_tables}} for the resolution order, and
+set \code{CPAS_DATA_ROOT} to override them with a project checkout) and
+returns one row per tumour sample of a project, with
 CanPAS-compatible columns: \code{ID}, \code{<endpoint>_status} /
 \code{<endpoint>_time} (years), \code{age}, \code{sex}, \code{stage} and,
 when present, \code{histology} and \code{grade}.

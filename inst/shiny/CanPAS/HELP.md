@@ -53,9 +53,14 @@ A single selection — **dataset + survival endpoint** — is shared by all page
 |---|---|---|
 | GEO cohorts | served from the CanPAS MySQL mirror through the public API | required (HTTP 429 = rate limit, retry later) |
 | CGGA cohorts (3 glioma cohorts) | served from the same mirror (`CGGA_<ID>_surv`) | required |
-| TCGA projects | expression fetched per gene on demand from UCSC Xena; clinical/survival tables stored locally | required for expression |
-| TCGA projects (`TCGA-XXXX`) | local clinical/survival tables + on-demand UCSC Xena expression | required for expression |
+| TCGA projects (`TCGA-XXXX`) | clinical/survival tables ship **inside the package** (no configuration needed) + expression fetched per gene on demand from UCSC Xena | required for expression only |
 | Datasets table links | NCBI GEO for GEO cohorts, GDC Portal for TCGA projects | — |
+
+The two TCGA tables (clinical + survival, 196 KB together) are bundled with
+CanPAS, so TCGA cohorts are analysable as soon as the package is installed —
+`CPAS_DATA_ROOT` is an **optional override** that points the helpers at a project
+checkout (`<root>/data/tcga/*.rda`) instead. `tcga_local_tables()` reports which
+copy is being read and where it comes from; the Datasets page shows the same line.
 
 ## KM analysis
 
@@ -331,8 +336,9 @@ COX_analysis(tcga, type = "OS", cont_Variates = c("TP53", "age"),
 
 ## the TCGA pieces individually
 tcga_gene_expr_df("LUAD", "TP53")        # Xena, per gene, long table
-tcga_surv_table("LUAD")                  # local clinical table, all endpoints
+tcga_surv_table("LUAD")                  # bundled clinical table, all endpoints
 tcga_merged("LUAD", c("TP53", "GAPDH"), type = "OS")
+tcga_local_tables()                      # which tables are read, and from where
 ```
 
 ### 5. Competing risks (package functions, not wired into the app)

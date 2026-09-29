@@ -4,6 +4,34 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## TCGA cohorts now work out of the box: the clinical/survival tables ship with the package (2026-09-30)
+
+The two local TCGA tables (`tcga_clinical.rda`, `tcga_surv.rda`; 196 KB together) are now
+**bundled with the package** (`inst/extdata/tcga/`), so every TCGA cohort in the catalog can
+be analysed from an installed CanPAS with no configuration. Previously the tables were only
+read from `<CPAS_DATA_ROOT>/data/tcga/` with **no default**, so unless the variable was set
+the TCGA helpers stopped with *"Local CanPAS data file not found:
+/data/tcga/tcga_clinical.rda"* and the app could not analyse any `TCGA-*` cohort.
+
+* **Resolution order** (`.cpas_tcga_paths()`, exported as `tcga_local_tables()`): (a) an
+  explicit override — `options(CanPAS.tcga_clinical_rda = )` /
+  `options(CanPAS.tcga_survival_rda = )`, or a `TCGA_CLI_RDA` / `TCGA_SURV_RDA` object in the
+  global environment; (b) `CPAS_DATA_ROOT` when set and `<root>/data/tcga/<file>` exists
+  (backwards compatible with a project checkout); (c) the copy bundled with the installed
+  package, located with `system.file("extdata/tcga", package = "CanPAS")` after installation;
+  (d) otherwise an actionable error that names both ways to supply the tables and prints every
+  path it tried. `CPAS_DATA_ROOT`, `TCGA_CLI_RDA` and `TCGA_SURV_RDA` keep their old bindings.
+* **App**: `apps/core.R` reuses `CanPAS::tcga_local_tables()` instead of assuming a data root —
+  analysing a TCGA cohort no longer reports "clinical covariates are unavailable, set
+  CPAS_DATA_ROOT" (that message is now GEO/CGGA-only), the Datasets page states where the TCGA
+  tables come from, and the Help and Methods pages say the tables are bundled and that
+  `CPAS_DATA_ROOT` is an optional override.
+* **Tests**: `tests/testthat/test-tcga-catalog.R` now pins the resolution order with
+  `CPAS_DATA_ROOT` unset (paths point into the installed package, both tables load, the
+  clinical table carries exactly the catalog's 33 TCGA projects, `tcga_surv_table("TCGA-LUAD")`
+  returns its 574-row survival table) and with `CPAS_DATA_ROOT` set to the project checkout;
+  no test depends on the variable being pre-set.
+
 ## Catalog growth to 197 cohorts: GSE205209 added, column semantics clarified, two upload/verify hardenings (2026-09-25)
 
 The catalog now holds **197 cohorts (38,981 analysable samples)** across 29 cancer types:

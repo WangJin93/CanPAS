@@ -49,7 +49,7 @@
 }
 
 .surv_tbl <- function(acc) {
-  if (startsWith(acc, "TCGA-")) {          # TCGA: local clinical/survival tables
+  if (startsWith(acc, "TCGA-")) {          # TCGA: bundled clinical/survival tables
     return(tcga_surv_table(sub("^TCGA-", "", acc)))
   }
   r <- get_data(acc, "surv_data")
@@ -76,14 +76,45 @@
   out
 }
 
+# ---- local TCGA tables: one availability check for the whole app -----------
+# The resolution order lives in the package (CanPAS::tcga_local_tables()), so the
+# app and the TCGA helpers cannot disagree about which tables will be read.
+# CPAS_DATA_ROOT is an *override* for a project checkout, not a requirement: the
+# clinical/survival tables ship with CanPAS, so TCGA cohorts are analysable as
+# soon as the package is installed.
+.tcga_local <- function() tryCatch(CanPAS::tcga_local_tables(), error = function(e) NULL)
+
+.tcga_available <- function() isTRUE(.tcga_local()$found)
+
+# one user-facing line naming where the TCGA tables come from, or what to do when
+# they cannot be found at all
+.tcga_source_note <- function() {
+  t <- .tcga_local()
+  if (is.null(t) || !length(t)) return("TCGA clinical/survival tables: unknown.")
+  if (isTRUE(t$found)) {
+    lab <- c(override = "explicit path", CPAS_DATA_ROOT = "CPAS_DATA_ROOT",
+             package = "bundled with the package")[unique(stats::na.omit(t$source))]
+    return(sprintf("TCGA clinical/survival tables: available (%s).",
+                   paste(unname(lab), collapse = " + ")))
+  }
+  paste0("TCGA clinical/survival tables could not be found: reinstall CanPAS so ",
+         "the bundled tables are present, or set CPAS_DATA_ROOT to a project checkout.")
+}
+
 # join clinical columns available in the local surv mirrors (<root>/data/processed/surv)
 .loc_clin <- function(acc) {
+  # TCGA cohorts already carry their clinical columns: tcga_surv_table() reads
+  # them from the clinical/survival tables that ship with the package (see
+  # CanPAS::tcga_local_tables()), so a TCGA cohort is never reported as "clinical
+  # covariates unavailable" just because CPAS_DATA_ROOT is unset.
+  if (startsWith(acc, "TCGA-")) return(NULL)
   root <- Sys.getenv("CPAS_DATA_ROOT", "")
   dir  <- file.path(root, "data", "processed", "surv")
   if (!dir.exists(dir)) {
     if (!isTRUE(getOption("cpas.clin_warned"))) {
-      message("Clinical covariates are unavailable: local survival directory not found (",
-              dir, "). Set CPAS_DATA_ROOT to the CanPAS data root to enable them.")
+      message("Clinical covariates for GEO/CGGA cohorts are unavailable: local survival directory not found (",
+              dir, "). Set CPAS_DATA_ROOT to the CanPAS data root to enable them ",
+              "(TCGA cohorts are unaffected: their clinical tables ship with the package).")
       options(cpas.clin_warned = TRUE)
     }
     return(NULL)

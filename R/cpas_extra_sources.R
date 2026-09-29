@@ -3,24 +3,129 @@
 #   * no per-gene cache files and no full-matrix downloads: expression is
 #     fetched per gene from UCSC Xena with the same query used by
 #     UCSCXenaShiny (get_data_df), i.e. UCSCXenaShiny:::get_data();
-#   * only the clinical / survival tables copied into <CPAS_DATA_ROOT>/data/tcga
-#     are used;
+#   * the two clinical / survival tables are tiny (196 KB together) and ship
+#     inside the package (inst/extdata/tcga/*.rda), so TCGA cohorts work from an
+#     installed package with no configuration; CPAS_DATA_ROOT only overrides them
+#     with a copy from a project checkout;
 #   * TCGA cohorts are exposed with the same "merged" structure as GEO cohorts,
 #     so the whole package (COX/KM/meta) can consume them unchanged.
 
-CPAS_DATA_ROOT <- Sys.getenv("CPAS_DATA_ROOT", "")   # no personal default: set it, or the helpers below stop with instructions
+# Resolution order of the two local TCGA tables -------------------------------
+# .cpas_tcga_paths() resolves each file by taking the first candidate that
+# exists, in this order:
+#   (a) an explicit user override - options("CanPAS.tcga_clinical_rda") /
+#       options("CanPAS.tcga_survival_rda"), or a TCGA_CLI_RDA / TCGA_SURV_RDA
+#       object assigned in the global environment;
+#   (b) CPAS_DATA_ROOT when it is set and <root>/data/tcga/<file> exists (the
+#       layout of a project checkout; the historical behaviour);
+#   (c) the copy bundled with the installed package, inst/extdata/tcga/<file>,
+#       located with system.file() at call time, i.e. after installation. This is
+#       the out-of-the-box path and needs no configuration;
+#   (d) otherwise the file is not resolved and the callers stop with a message
+#       that names both ways to supply it and prints every path that was tried.
+# CPAS_DATA_ROOT / TCGA_CLI_RDA / TCGA_SURV_RDA stay defined (see below) so code
+# that reads them keeps working, but the helpers no longer consume them directly.
+CPAS_DATA_ROOT <- Sys.getenv("CPAS_DATA_ROOT", "")   # kept for compatibility; resolution happens in .cpas_tcga_paths()
 TCGA_CLI_RDA  <- file.path(CPAS_DATA_ROOT, "data/tcga", "tcga_clinical.rda")
 TCGA_SURV_RDA <- file.path(CPAS_DATA_ROOT, "data/tcga", "tcga_surv.rda")
 
-# Local TCGA tables are shipped outside the package: fail with an actionable message
-# instead of an obscure downstream error when the root is not configured.
-.cpas_need_local <- function(path) {
-  if (!file.exists(path))
-    stop("Local CanPAS data file not found: ", path,
-         "\nSet it with Sys.setenv(CPAS_DATA_ROOT = \"<path to the CanPAS data root>\"); ",
-         "TCGA analyses read <CPAS_DATA_ROOT>/data/tcga/*.rda.",
-         call. = FALSE)
-  invisible(TRUE)
+# file name of each table inside <root>/data/tcga and <pkg>/extdata/tcga
+.cpas_tcga_local_files <- c(clinical = "tcga_clinical.rda",
+                            survival = "tcga_surv.rda")
+
+# (a) explicit override, if the user set one: option first, then a global binding
+.cpas_tcga_override <- function(which) {
+  opt <- switch(which, clinical = "CanPAS.tcga_clinical_rda",
+                       survival = "CanPAS.tcga_survival_rda")
+  nm  <- switch(which, clinical = "TCGA_CLI_RDA", survival = "TCGA_SURV_RDA")
+  v <- getOption(opt, NULL)
+  if (is.null(v) || !length(v) || is.na(v[1]) || !nzchar(as.character(v[1])))
+    v <- if (exists(nm, envir = globalenv(), inherits = FALSE)) get(nm, envir = globalenv()) else NULL
+  if (is.null(v) || !length(v) || is.na(v[1]) || !nzchar(as.character(v[1]))) return(NULL)
+  path.expand(as.character(v[1]))
+}
+
+# Resolve both tables following the order documented above. Never errors, so the
+# Shiny app can ask "are the TCGA tables available?" without catching an error;
+# tcga_surv_table() turns an unresolved file into an actionable stop() below.
+.cpas_tcga_paths <- function() {
+  root <- Sys.getenv("CPAS_DATA_ROOT", "")
+  pkg  <- system.file("extdata", "tcga", package = "CanPAS")
+  out  <- list(clinical = NA_character_, survival = NA_character_)
+  src  <- list(clinical = NA_character_, survival = NA_character_)
+  tried <- list()
+  for (which in names(.cpas_tcga_local_files)) {
+    file <- .cpas_tcga_local_files[[which]]
+    cand <- character(0); lab <- character(0)
+    ov <- .cpas_tcga_override(which)
+    if (!is.null(ov)) { cand <- c(cand, ov); lab <- c(lab, "override") }
+    if (nzchar(root)) { cand <- c(cand, file.path(root, "data", "tcga", file)); lab <- c(lab, "CPAS_DATA_ROOT") }
+    if (nzchar(pkg))  { cand <- c(cand, file.path(pkg, file)); lab <- c(lab, "package") }
+    tried[[which]] <- stats::setNames(cand, lab)
+    hit <- which(file.exists(cand))
+    if (length(hit)) { out[[which]] <- cand[hit[1]]; src[[which]] <- lab[hit[1]] }
+  }
+  list(clinical = out$clinical, survival = out$survival,
+       source   = stats::setNames(unlist(src, use.names = FALSE),
+                                  names(.cpas_tcga_local_files)),
+       found    = !anyNA(c(out$clinical, out$survival)),
+       tried    = tried)
+}
+
+#' @title Local TCGA clinical/survival tables used by the TCGA helpers
+#' @description Reports which local clinical and survival tables the TCGA helpers
+#' (\code{\link{tcga_surv_table}}, \code{\link{tcga_merged}},
+#' \code{\link{cohort_merged}}) read, and where each one comes from. The two
+#' tables are small (196 KB together) and are \strong{bundled with the package},
+#' so TCGA cohorts can be analysed as soon as CanPAS is installed, without
+#' setting any environment variable. \code{CPAS_DATA_ROOT} is an optional
+#' override that points the helpers at a project checkout instead.
+#'
+#' Each file is resolved by taking the first candidate that exists, in this
+#' order: (a) an explicit override -
+#' \code{options(CanPAS.tcga_clinical_rda = )} /
+#' \code{options(CanPAS.tcga_survival_rda = )}, or a \code{TCGA_CLI_RDA} /
+#' \code{TCGA_SURV_RDA} object assigned in the global environment; (b)
+#' \code{CPAS_DATA_ROOT} when set and \code{<root>/data/tcga/<file>} exists;
+#' (c) the copy bundled inside the installed package
+#' (\code{system.file("extdata/tcga", package = "CanPAS")}); (d) otherwise the
+#' file is unresolvable and the helpers stop with a message that names both ways
+#' to supply it and lists the paths that were tried.
+#' @return A list with \code{clinical} and \code{survival} (the resolved paths,
+#' \code{NA_character_} when a file could not be resolved), \code{source}
+#' (named character vector, one of \code{"override"}, \code{"CPAS_DATA_ROOT"} or
+#' \code{"package"} per file), \code{found} (single logical: both files exist)
+#' and \code{tried} (named list of the candidate paths per file, named by the
+#' rule that produced them).
+#' @examples
+#'   ## Which tables the TCGA helpers will read, and where they come from.
+#'   t <- tcga_local_tables()
+#'   t$found
+#'   t$source
+#'   basename(t$clinical)
+#' @export
+tcga_local_tables <- function() .cpas_tcga_paths()
+
+# Neither table could be resolved: stop with an actionable message instead of an
+# obscure downstream error, naming both options and printing the paths that were
+# tried.
+.cpas_need_local <- function(paths = .cpas_tcga_paths()) {
+  if (isTRUE(paths$found)) return(invisible(TRUE))
+  miss  <- names(.cpas_tcga_local_files)[is.na(c(paths$clinical, paths$survival))]
+  tried <- unlist(lapply(paths$tried[miss], function(x) {
+    x <- x[nzchar(x)]
+    if (!length(x)) "  (no candidate path)" else
+      sprintf("  %s  [%s]", unname(x), names(x))
+  }), use.names = FALSE)
+  stop("Local CanPAS TCGA data file(s) not found: ",
+       paste(unname(.cpas_tcga_local_files[miss]), collapse = ", "),
+       "\nThe clinical/survival tables ship inside the package, so this normally ",
+       "means the installation is incomplete, or CPAS_DATA_ROOT points at another tree.",
+       "\nEither (1) reinstall CanPAS so the bundled tables are present, or",
+       "\n(2) set Sys.setenv(CPAS_DATA_ROOT = \"<path to the CanPAS data root>\") ",
+       "to use a project checkout (<CPAS_DATA_ROOT>/data/tcga/*.rda).",
+       "\nPaths tried:\n", paste(tried, collapse = "\n"),
+       call. = FALSE)
 }
 
 # Supported TCGA projects — derived from the shipped catalog -----------------
@@ -182,8 +287,10 @@ tcga_get_expr <- function(dataset = "LUAD", genes = "TP53") {
 }
 
 #' @title TCGA clinical + survival table
-#' @description Loads the local TCGA clinical and survival tables (copied into
-#' the CanPAS data tree) and returns one row per tumour sample of a project, with
+#' @description Loads the local TCGA clinical and survival tables (bundled with
+#' the package; see \code{\link{tcga_local_tables}} for the resolution order, and
+#' set \code{CPAS_DATA_ROOT} to override them with a project checkout) and
+#' returns one row per tumour sample of a project, with
 #' CanPAS-compatible columns: \code{ID}, \code{<endpoint>_status} /
 #' \code{<endpoint>_time} (years), \code{age}, \code{sex}, \code{stage} and,
 #' when present, \code{histology} and \code{grade}.
@@ -206,9 +313,10 @@ tcga_surv_table <- function(dataset = "LUAD",
                             endpoints = c("OS", "DSS", "DFI", "PFI")) {
   tcga_project_dataset(dataset)          # validates the project abbreviation
   project <- toupper(sub("^TCGA-", "", as.character(dataset)[1]))
-.cpas_need_local(TCGA_CLI_RDA); .cpas_need_local(TCGA_SURV_RDA)
+  paths <- .cpas_tcga_paths()            # override > CPAS_DATA_ROOT > bundled
+  .cpas_need_local(paths)
   e <- new.env()
-  load(TCGA_CLI_RDA, envir = e); load(TCGA_SURV_RDA, envir = e)
+  load(paths$clinical, envir = e); load(paths$survival, envir = e)
   cli <- get("tcga_clinical", envir = e); sv <- get("tcga_surv", envir = e)
   if (!all(c("sample", "type") %in% colnames(cli)))
     stop("tcga_clinical must contain 'sample' and 'type' columns.")

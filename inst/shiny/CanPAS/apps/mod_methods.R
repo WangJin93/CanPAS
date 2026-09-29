@@ -32,9 +32,11 @@ ui_mod_methods <- function(id) {
         "1 · Data sources",
         uiOutput(ns("sources")),
         p(class = "note", "Expression values are read from the MySQL mirror at analysis
-          time; TCGA expression is fetched on demand from UCSC Xena and TCGA clinical
-          tables are stored locally. Survival tables always come from the mirror
-          (GEO, CGGA, cBioPortal-hosted studies) or the local TCGA table (TCGA)."),
+          time; TCGA expression is fetched on demand from UCSC Xena and the TCGA
+          clinical/survival tables ship inside the package (set CPAS_DATA_ROOT only
+          to override them with a project checkout). Survival tables always come from
+          the mirror (GEO, CGGA, cBioPortal-hosted studies) or the bundled TCGA
+          tables (TCGA)."),
         p(class = "note", tags$b("Expression scale: "), "all mirrored GEO and CGGA
           matrices are on the log2 scale. 28 datasets were deposited by GEO as linear
           intensities (platform-dependent units, e.g. MAS5 values in the 10^3-10^5
@@ -183,7 +185,7 @@ server_mod_methods <- function(id, dataset_info) {
         Survival = c("MySQL mirror (&lt;ACC&gt;_surv)",
                      "MySQL mirror (&lt;ACC&gt;_surv); SDRF annotation fields resolved to patient level",
                      "MySQL mirror (CGGA_&lt;ID&gt;_surv)",
-                     "Local clinical/survival table",
+                     "Clinical/survival tables bundled with the package (CPAS_DATA_ROOT is an optional override)",
                      "MySQL mirror (&lt;ACC&gt;_surv); clinical patient files deposited with the study"),
         `Cohort ids` = c("GSE…, GSE…_GPL…",
                          paste(utils::head(di$Accession[src == "EMBL-EBI"], 3), collapse = ", "),

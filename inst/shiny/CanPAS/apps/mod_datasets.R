@@ -16,8 +16,8 @@ ui_mod_datasets <- function(id) {
         br(), "· Source page — NCBI GEO, CGGA or GDC Portal in a new tab.
         ", br(), br(),
         tags$b("Sources: "), "GEO (curated mirror), EMBL-EBI (ArrayExpress/BioStudies),
-        CGGA (3 glioma cohorts), TCGA (on-demand UCSC Xena expression + local
-        clinical tables) and two cBioPortal-hosted studies.",
+        CGGA (3 glioma cohorts), TCGA (on-demand UCSC Xena expression + clinical/
+        survival tables bundled with the package) and two cBioPortal-hosted studies.",
         br(), br(),
         tags$b("Workflow: "), "pick the endpoint family first — the table then lists
         only the cohorts that carry it, and a column shows the token each one
@@ -32,7 +32,9 @@ ui_mod_datasets <- function(id) {
         expression data and a non-missing time and status for the cohort's primary
         endpoint — and Events is the number of those samples with an event. '\u2014'
         means the cohort has no expression table in the mirror, so gene-level
-        analysis is not possible.")
+        analysis is not possible."),
+      br(),
+      uiOutput(ns("tcga_note"))
     ),
     mainPanel(width = 9,
       h4("Cohort catalog", class = "section-title"),
@@ -61,6 +63,16 @@ server_mod_datasets <- function(id, rv, on_jump, dataset_info) {
     ns <- session$ns
     catalog <- .norm_catalog(dataset_info)
     fam_n <- reactive(.family_counts(catalog))
+
+    # TCGA availability follows the package's resolution order (bundled tables
+    # first, CPAS_DATA_ROOT as an optional override), so the page states whether
+    # TCGA cohorts can be analysed instead of assuming they need a data root.
+    output$tcga_note <- renderUI({
+      ok <- .tcga_available()
+      div(class = "cpas-hint",
+          style = if (ok) "" else "color:#b02a37; font-weight:600;",
+          .tcga_source_note())
+    })
 
     observe({
       updateSelectInput(session, "type", choices = sort(unique(catalog$Type)))

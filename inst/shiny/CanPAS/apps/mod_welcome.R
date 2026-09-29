@@ -8,8 +8,8 @@ ui_mod_welcome <- function(id) {
       hr(),
       h4("What this app does", class = "section-title"),
       p("CanPAS combines a curated GEO survival database (MySQL mirror), the CGGA
-        glioma cohorts and TCGA cohorts (local clinical tables + on-demand
-        UCSC Xena expression) behind one unified analysis workflow."),
+        glioma cohorts and TCGA cohorts (clinical/survival tables bundled with the
+        package + on-demand UCSC Xena expression) behind one unified analysis workflow."),
       tags$ul(
         tags$li(tags$b("Datasets: "), "browse cohorts by cancer type and survival
                 endpoint, inspect sample size and platform, and push a selected
