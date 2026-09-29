@@ -356,10 +356,12 @@
   hit
 }
 
-# cohorts of one cancer type that carry a family (sorted accessions)
+# cohorts of one cancer type that carry a family (sorted accessions);
+# "__all__" means "any cancer type", which the single-dataset pages use for the
+# optional cancer-type narrowing
 .cohorts_with_family <- function(catalog, type, fam) {
   if (is.null(type) || !nzchar(type) || is.null(fam) || !nzchar(fam)) return(character(0))
-  d <- catalog[catalog$Type == type, , drop = FALSE]
+  d <- if (identical(type, "__all__")) catalog else catalog[catalog$Type == type, , drop = FALSE]
   if (!nrow(d)) return(character(0))
   ## "any" keeps every cohort; every other value (including the combined
   ## "PFS or MFS") is resolved through .family_hit(), which expands the combined
@@ -821,6 +823,85 @@ server_fig_block <- function(input, output, session, key, draw, ready = NULL,
   if (is.null(type) || !nzchar(type)) return(.dataset_choices(catalog))
   d <- catalog[catalog$Type == type, , drop = FALSE]
   .dataset_choices(d)
+}
+
+# ---- endpoint family -> cancer type -> dataset (single-dataset pages) ----
+# The three single-dataset pages choose the endpoint family FIRST, exactly like
+# the Datasets page and the multi-dataset pages: the cancer-type and dataset
+# lists then only offer what can answer that family, so an analysis can never be
+# started on a cohort that does not have the endpoint. Which cohort carries which
+# family is read from the packaged EP_* columns through .family_hit(), i.e. the
+# same definition the Datasets filter and the analysis path use.
+
+# families at least one catalogued cohort carries, in family order, labelled with
+# their cohort counts (the label style of the Datasets page filter)
+.family_choices <- function(catalog) {
+  n <- .family_counts(catalog)
+  fams <- .family_order[n > 0]
+  if (!length(fams)) fams <- "OS"
+  stats::setNames(fams, sprintf("%s (%d)", fams, n[fams]))
+}
+
+# the family to work in for a cohort: `prefer` when that cohort carries it,
+# otherwise the cohort's first family - the same fallback .set_shared_selection()
+# uses, so the control and the shared selection can never disagree
+.family_for_cohort <- function(catalog, acc, prefer = NULL) {
+  if (is.null(acc) || !length(acc) || is.na(acc)) return(NA_character_)
+  fams <- .families_of(catalog, as.character(acc)[1])
+  if (!length(fams)) return(NA_character_)
+  if (!is.null(prefer) && length(prefer) == 1L && !is.na(prefer) &&
+      as.character(prefer) %in% fams)
+    return(as.character(prefer))
+  fams[1]
+}
+
+# cancer types with at least one cohort carrying `fam`, "All types" first and the
+# rest labelled with the number of cohorts that carry the family
+.type_choices_with_family <- function(catalog, fam) {
+  out <- stats::setNames("__all__", "All types")
+  tp <- sort(unique(as.character(catalog$Type)))
+  n <- vapply(tp, function(t) length(.cohorts_with_family(catalog, t, fam)), integer(1))
+  tp <- tp[n > 0]
+  if (!length(tp)) return(out)
+  c(out, stats::setNames(tp, sprintf("%s (%d)", tp, n[tp])))
+}
+
+# dataset choices for a single-dataset page: only the cohorts that carry `fam`
+# and, when a cancer type is chosen, belong to it - grouped and labelled exactly
+# like .dataset_choices()
+.dataset_choices_with_family <- function(catalog, type, fam) {
+  d <- catalog
+  if (!is.null(type) && nzchar(type) && !identical(type, "__all__"))
+    d <- d[d$Type == type, , drop = FALSE]
+  if (!is.null(fam) && nzchar(fam) && !identical(fam, "__all__"))
+    d <- d[.family_hit(d, fam), , drop = FALSE]
+  .dataset_choices(d)
+}
+
+# Fill "endpoint family" -> "cancer type" -> "dataset" on a single-dataset page;
+# the shared cohort is preselected when it carries the family (so a jump from the
+# Datasets page lands on the cohort that was clicked), otherwise the first cohort
+# that carries it.
+.init_single_family_selectors <- function(session, catalog, shared = NULL,
+                                          family = NULL) {
+  ch_fam <- .family_choices(catalog)
+  if (!length(ch_fam)) return(invisible(NULL))
+  shared_fam <- .family_for_cohort(catalog, shared, family)
+  sel_fam <- if (!is.na(shared_fam) && shared_fam %in% unname(ch_fam))
+    shared_fam else unname(ch_fam)[1]
+  updateSelectInput(session, "ep", choices = ch_fam, selected = sel_fam)
+  st <- if (!is.null(shared) && !is.na(shared))
+    catalog$Type[catalog$Accession == shared][1] else NA_character_
+  ch_type <- .type_choices_with_family(catalog, sel_fam)
+  sel_type <- if (!is.na(st) && st %in% unname(ch_type)) st else "__all__"
+  updateSelectInput(session, "ctype", choices = ch_type, selected = sel_type)
+  ds <- .dataset_choices_with_family(catalog, sel_type, sel_fam)
+  accs <- unlist(unname(ds), use.names = FALSE)
+  updateSelectizeInput(session, "ds", choices = ds,
+                       selected = if (!is.null(shared) && !is.na(shared) && shared %in% accs)
+                         shared else accs[1],
+                       server = TRUE)
+  invisible(sel_fam)
 }
 
 # Fill "cancer type" + "dataset" on a single-dataset page, keeping the shared

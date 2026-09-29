@@ -7,10 +7,10 @@ ui_mod_cox_by_genes <- function(id) {
   sidebarLayout(
     sidebarPanel(width = 3,
       h5("Dataset", class = "section-title"),
-      selectInput(ns("ctype"), "Cancer type", choices = NULL),
-      selectizeInput(ns("ds"), "Dataset", choices = NULL,
+      selectInput(ns("ep"), .lab("Endpoint", "Survival endpoint family (OS/DSS/DFS/PFS/MFS). Chosen first: the cancer type and dataset lists below then offer only the cohorts that carry it; each cohort still contributes the token it actually has (e.g. RFS for the DFS family)."), choices = NULL),
+      selectInput(ns("ctype"), .lab("Cancer type", "Optional narrowing: All types, or one of the cancer types with at least one cohort carrying the endpoint family chosen above."), choices = NULL),
+      selectizeInput(ns("ds"), .lab("Dataset", "Only the cohorts that carry the endpoint family chosen above (narrowed to the chosen cancer type); selecting one makes it the shared selection."), choices = NULL,
                      options = list(placeholder = "Select a dataset...", maxOptions = 30)),
-      selectInput(ns("ep"), .lab("Endpoint", "Survival endpoint family (OS/DSS/DFS/PFS/MFS); the concrete token is resolved per cohort and reported with the results."), choices = NULL),
       hr(),
       h5("Genes", class = "section-title"),
       textInput(ns("genes"), .lab("Genes", "Comma-separated gene list; every gene is collapsed on its own and the results are written into one table."),
@@ -40,48 +40,95 @@ ui_mod_cox_by_genes <- function(id) {
 server_mod_cox_by_genes <- function(id, rv, dataset_info) {
   moduleServer(id, function(input, output, session) {
     catalog <- .norm_catalog(dataset_info)
-    init_acc <- shiny::isolate(rv$sel$acc)
-    init_fam <- shiny::isolate(rv$sel$family)
-    # cancer type drives the dataset list (first render + later changes)
+    # ---------------- shared endpoint / dataset selection ----------------
+    # The endpoint family is chosen FIRST (as on the Datasets and multi-dataset
+    # pages): the cancer type and the dataset list below then offer only the
+    # cohorts that carry it. The concrete token stays cohort-resolved.
     session$onFlushed(function()
-      .init_single_selectors(session, catalog, shared = shiny::isolate(rv$sel$acc)),
+      .init_single_family_selectors(session, catalog,
+                                    shared = shiny::isolate(rv$sel$acc),
+                                    family = shiny::isolate(rv$sel$family)),
       once = TRUE)
+    # endpoint changed: the cancer types that carry it and the datasets follow
+    observeEvent(input$ep, {
+      if (is.null(input$ep) || !nzchar(input$ep)) return()
+      sh <- shiny::isolate(rv$sel$acc)
+      st <- if (!is.null(sh) && !is.na(sh))
+        catalog$Type[catalog$Accession == sh][1] else NA_character_
+      ch_type <- .type_choices_with_family(catalog, input$ep)
+      cur <- shiny::isolate(input$ctype)
+      sel_type <- if (!is.null(cur) && length(cur) && cur %in% unname(ch_type)) cur
+                  else if (!is.na(st) && st %in% unname(ch_type)) st
+                  else "__all__"
+      updateSelectInput(session, "ctype", choices = ch_type, selected = sel_type)
+      ds <- .dataset_choices_with_family(catalog, sel_type, input$ep)
+      accs <- unlist(unname(ds), use.names = FALSE)
+      updateSelectizeInput(session, "ds", choices = ds,
+                           selected = if (!is.null(sh) && !is.na(sh) && sh %in% accs)
+                             sh else accs[1], server = TRUE)
+      if (!is.null(rv$sel$acc) && !identical(rv$sel$family, input$ep)) {
+        rv$sel$family <- input$ep
+        rv$sel$ep <- .resolve_family(catalog, rv$sel$acc, input$ep)
+      }
+    }, ignoreNULL = TRUE)
+    # cancer type only narrows the dataset list (the family is fixed above)
     observeEvent(input$ctype, {
       if (is.null(input$ctype) || !nzchar(input$ctype)) return()
-      ds <- .dataset_choices_of(catalog, input$ctype)
+      ds <- .dataset_choices_with_family(catalog, input$ctype, shiny::isolate(input$ep))
       accs <- unlist(unname(ds), use.names = FALSE)
       sh <- intersect(shiny::isolate(rv$sel$acc) %||% character(0), accs)
       updateSelectizeInput(session, "ds", choices = ds,
                            selected = if (length(sh)) sh else accs[1], server = TRUE)
     }, ignoreNULL = TRUE)
-    if (!is.null(init_acc)) {
-      eps <- .endpoint_choices(catalog, init_acc)
-      updateSelectInput(session, "ep", choices = eps,
-                        selected = if (!is.null(init_fam) && init_fam %in% eps)
-                          init_fam else eps[1])
-    }
+    # a cohort pushed from another page: keep the family when this cohort carries
+    # it, otherwise move the endpoint control to one of its families; the cancer
+    # type only narrows when the current one does not offer the cohort.
+    # rv$sel is a single reactive value, so writing any of its fields (e.g. the
+    # family, below) invalidates this observer as well: act only when the cohort
+    # itself moved, or the page would undo the family the user just chose.
+    incoming_acc <- shiny::reactiveVal(NULL)
     observeEvent(rv$sel$acc, {
-      if (is.null(rv$sel$acc)) return()
-      updateSelectizeInput(session, "ds", selected = rv$sel$acc)
-      eps <- .endpoint_choices(catalog, rv$sel$acc)
-      if (!is.null(rv$sel$family) && rv$sel$family %in% eps)
-        updateSelectInput(session, "ep", choices = eps, selected = rv$sel$family)
+      acc <- rv$sel$acc
+      if (is.null(acc) || !acc %in% catalog$Accession) return()
+      if (identical(incoming_acc(), acc)) return()
+      incoming_acc(acc)
+      fam <- .family_for_cohort(catalog, acc, shiny::isolate(rv$sel$family))
+      if (is.na(fam)) return()
+      ch_fam <- .family_choices(catalog)
+      if (!identical(shiny::isolate(input$ep), fam))
+        updateSelectInput(session, "ep", choices = ch_fam, selected = fam)
+      if (!identical(rv$sel$family, fam)) rv$sel$family <- fam
+      cur <- shiny::isolate(input$ctype)
+      if (!acc %in% unlist(unname(.dataset_choices_with_family(catalog, cur, fam)))) {
+        ch_type <- .type_choices_with_family(catalog, fam)
+        st <- catalog$Type[catalog$Accession == acc][1]
+        cur <- if (!is.na(st) && st %in% unname(ch_type)) st else "__all__"
+        updateSelectInput(session, "ctype", choices = ch_type, selected = cur)
+      }
+      ds <- .dataset_choices_with_family(catalog, cur, fam)
+      if (acc %in% unlist(unname(ds)) && !identical(shiny::isolate(input$ds), acc))
+        updateSelectizeInput(session, "ds", choices = ds, selected = acc, server = TRUE)
+      if (is.na(rv$sel$ep %||% NA_character_))
+        rv$sel$ep <- .resolve_family(catalog, acc, fam)
     }, ignoreNULL = TRUE)
+    # the family can also move on another page while the cohort stays
+    observeEvent(rv$sel$family, {
+      fam <- rv$sel$family
+      if (is.null(fam) || !nzchar(fam) || identical(shiny::isolate(input$ep), fam)) return()
+      ch_fam <- .family_choices(catalog)
+      if (fam %in% unname(ch_fam))
+        updateSelectInput(session, "ep", choices = ch_fam, selected = fam)
+    }, ignoreNULL = TRUE)
+    # selecting a dataset sets the shared selection exactly as before and
+    # resolves the concrete token of this cohort for the chosen family
     observeEvent(input$ds, {
       if (is.null(input$ds) || !nzchar(input$ds)) return()
-      if (!identical(rv$sel$acc, input$ds)) {
-        .set_shared_selection(rv, catalog, input$ds)
-        eps <- .endpoint_choices(catalog, input$ds)
-        updateSelectInput(session, "ep", choices = eps,
-                          selected = if (!is.null(rv$sel$ep) && rv$sel$ep %in% eps)
-                            rv$sel$ep else eps[1])
-      }
-    }, ignoreInit = TRUE)
-    observeEvent(input$ep, {
-      if (is.null(input$ep) || !nzchar(input$ep)) return()
-      if (!identical(rv$sel$family, input$ep)) {
-        rv$sel$family <- input$ep
-        rv$sel$ep <- .resolve_family(catalog, rv$sel$acc, input$ep)
+      ds <- input$ds
+      if (!identical(rv$sel$acc, ds)) .set_shared_selection(rv, catalog, ds)
+      fam <- shiny::isolate(input$ep)
+      if (!is.null(fam) && nzchar(fam) && !identical(rv$sel$family, fam)) {
+        rv$sel$family <- fam
+        rv$sel$ep <- .resolve_family(catalog, ds, fam)
       }
     }, ignoreInit = TRUE)
 

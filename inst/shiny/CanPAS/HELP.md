@@ -33,10 +33,13 @@ printed with **4 decimals** (p-values below 0.0001 are shown as `<0.0001`).
 A single selection — **dataset + survival endpoint** — is shared by all pages:
 
 - selecting a row in **Datasets** immediately updates the shared selection;
-- the **KM analysis** and **COX analysis** pages each contain their own
-  *Dataset* and *Endpoint* drop-downs, pre-filled from the shared selection;
-- changing the dataset on any page updates the others (the endpoint list is
-  rebuilt from the endpoints actually available in that cohort);
+- every analysis page chooses the **endpoint family first**: the **KM analysis**,
+  **COX analysis** and **COX by genes** pages each contain their own *Endpoint* –
+  *Cancer type* – *Dataset* drop-downs, pre-filled from the shared selection, and
+  the cancer-type and dataset lists contain only the cohorts that carry the
+  chosen family;
+- changing the dataset or the endpoint family on any page updates the others (the
+  dataset list is rebuilt from the cohorts that carry the chosen family);
 - every parameter carries the short label shown in the sidebar plus a hover
   explanation behind the small ⓘ next to it; the probe box additionally states
   what the current choice means ("Auto: all probes (6 on this platform) of
@@ -116,9 +119,10 @@ Browsing families: `OS`, `DSS`, `DFS` and `PFS` (broad: `EP_PFS` or `EP_MFS`).
 
 Rules of use:
 
-- Single-cohort pages (KM / COX) show the family with the token actually used,
-  e.g. `DFS (RFS)` or `DFS (DFI) [derived]`; TCGA-derived DFI/PFI are marked
-  `[derived]`.
+- Single-cohort pages (KM / COX / COX by genes) choose the pooling family first;
+  the token the selected cohort actually contributes is reported in the status
+  line and in the results, e.g. `DFS (RFS)` or `DFS (DFI) [derived]`, with
+  TCGA-derived DFI/PFI marked `[derived]`.
 - `DFS`-family members may be pooled together (event definition is comparable).
   For the progression/metastasis family, pool `PFS + PFI` and `MFS + DRFS`
   **separately** — the endpoint selector lists `PFS (progression)` and
@@ -192,8 +196,10 @@ used as a time-to-event endpoint, and a token with (almost) no events (OS in
 
 ### Endpoint families in the interface
 
-The Datasets page filters by family, and every available family is listed
-separately with its cohort count:
+Every page chooses the family **first**: the Datasets page filters by it, and the
+single-dataset pages (KM, COX, COX by genes) then offer only the cancer types and
+cohorts that carry it. Every available family is listed separately with its
+cohort count:
 
 | Filter | Meaning | Cohorts |
 |---|---|---|
@@ -207,9 +213,10 @@ separately with its cohort count:
 
 The **Endpoint families** column shows, per cohort, the family and the token it
 contributes — `DFS (RFS), MFS`, `MFS (DRFS)`, `DFS (DFI) [derived]` — i.e. the
-same labels used by the endpoint selectors on the analysis pages. The KM, COX
-and Multi-datasets pages always run an analysis **per family** and report the
-token actually used.
+same labels used by the endpoint selectors on the analysis pages. The KM, COX,
+COX by genes and Multi-datasets pages always run an analysis **per family** and
+report the token actually used; the single-dataset pages additionally restrict
+their cancer-type and dataset lists to the cohorts that carry the chosen family.
 
 The Dashboard shows the family inventory with cohort counts (and the number of
 families) instead of the fine-grained token list.
@@ -372,9 +379,15 @@ from the cohorts that carry it:
    so a pooling run never silently loses a cohort because it lacks that endpoint.
    If a cohort still arrives from the shared selection without the family, the page
    says so instead of dropping it silently.
-3. **Single-dataset pages** (KM, COX, COX by genes): keep the reverse order —
-   pick the cohort, then the endpoint, because there you are looking at what that
-   one cohort offers (`DFS (RFS)`, `PFS (PFI) [derived]`, ...).
+3. **Single-dataset pages** (KM, COX, COX by genes): **Endpoint** -> *Cancer type*
+   (optional, default **All types**) -> *Dataset*. The endpoint list holds the
+   families at least one catalogued cohort carries; the cancer-type list is
+   restricted to the types with a cohort carrying that family, and the dataset
+   list to those cohorts. The concrete token is still resolved per cohort and
+   reported with the results. When a cohort arrives from the shared selection
+   without the family, the page first moves the endpoint selector to one of that
+   cohort's families (the family you were working in when the cohort has it, else
+   its primary family) and then selects it.
 
 The same rule decides both the filter and the analysis: a cohort counts as carrying a
 family when the catalog says so, or when its raw endpoint token maps to that family.

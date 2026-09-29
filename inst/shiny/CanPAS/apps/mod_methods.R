@@ -67,7 +67,10 @@ ui_mod_methods <- function(id) {
           tags$li(tags$b("A family groups tokens that answer the same clinical question."),
                   " Cohorts that report RFS and cohorts that report DFI can therefore be
                   analysed together as DFS, instead of being scattered over four
-                  separate endpoint labels."),
+                  separate endpoint labels. The family is therefore chosen ",
+                  tags$b("first"), " in the interface: the Datasets page filters by it,
+                  and the single-dataset pages (KM, COX, COX by genes) then offer only
+                  the cancer types and cohorts that carry it."),
           tags$li(tags$b("Pooling happens inside a family, never across families."),
                   " OS is never mixed with DSS, and DFS is never mixed with PFS."),
           tags$li(tags$b("The token is resolved per cohort and always reported."),
@@ -76,7 +79,8 @@ ui_mod_methods <- function(id) {
                   line states the token used (e.g. 'DFS (RFS)', 'DFS (DFI) [derived]')."),
           tags$li(tags$b("Derived endpoints are flagged."),
                   " TCGA DFI/PFI are derived endpoints; they are marked ", tags$code("[derived]"),
-                  " in the endpoint selector and recorded in the ", tags$code("EndpointDerived"),
+                  " in the Datasets table and in the token reported with a run, and recorded
+                  in the ", tags$code("EndpointDerived"),
                   " catalog column."),
           tags$li(tags$b("An endpoint is annotated only when the data support it."),
                   " A token needs events and real follow-up: in GSE40272 the RFS censored
@@ -332,7 +336,7 @@ server_mod_methods <- function(id, dataset_info) {
                     "Raw endpoint tokens available for the cohort",
                     "Families the cohort can be pooled under",
                     "The token this cohort contributes to each family (NA when absent)",
-                    "Token used as the default endpoint on the analysis pages",
+                    "Token of the cohort's primary endpoint (catalog annotation; a run uses the family chosen in the endpoint selector)",
                     "Tokens that are derived rather than directly reported",
                     "Platform of the expression table",
                     "Analysable samples: expression and the EndpointPrimary time/status are both present (so N differs from n_expr for cohorts whose endpoint covers fewer samples)",
@@ -340,7 +344,7 @@ server_mod_methods <- function(id, dataset_info) {
         UsedBy = c("every page", "Datasets filter, Multi-datasets grouping",
                    "Datasets table", "Datasets filter, all family selectors",
                    "family resolution (KM, COX, COX by genes, COX by datasets, Pooled KM, Meta-analysis)",
-                   "preselected endpoint", "derived-endpoint flag",
+                   "catalog annotation, Datasets filter", "derived-endpoint flag",
                    "Datasets table, REF_ID lookup", "Datasets table",
                    "Datasets table"),
         check.names = FALSE, stringsAsFactors = FALSE)
