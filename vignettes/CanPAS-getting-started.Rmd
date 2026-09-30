@@ -1,0 +1,190 @@
+---
+title: "Getting started with CanPAS"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with CanPAS}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6,
+                      fig.height = 4, warning = FALSE, message = FALSE)
+set.seed(20260930)
+```
+
+```{r}
+library(CanPAS)
+```
+
+## What the package is for
+
+CanPAS runs one survival analysis over many public cancer cohorts and one
+uniform data schema. A cohort is identified by its accession (`GSE31210`,
+`TCGA-LUAD`, `CGGA_693`, ...); an endpoint is requested by **family** (`OS`,
+`DSS`, `DFS`, `PFS`, `MFS`) and the concrete endpoint token a cohort actually
+reports (`RFS`, `PFI`, `DFI`, ...) is resolved per cohort and returned with every
+result. This vignette is deliberately **offline**: it uses the shipped catalog
+and small synthetic cohorts so that every number below is reproducible without a
+mirror, a network connection or a download.
+
+## The catalog
+
+`dataset_info` is one row per curated cohort, with the sample-size columns and
+the endpoint-family mapping.
+
+```{r}
+di <- dataset_info
+dim(di)
+head(di[, c("Accession", "Type", "N", "EndpointFamilies")], 4)
+```
+
+Which families a cohort can be analysed on, and with which token:
+
+```{r}
+endpoint_options("TCGA-LGG")
+endpoint_resolve("GSE31210", "DFS")   # that cohort reports RFS, not DFS
+endpoint_resolve("TCGA-LUAD", "PFS")  # a TCGA-derived endpoint
+```
+
+## Getting real data
+
+On a machine that can reach the CanPAS mirror (or with the local artefact tree
+present, via `CPAS_DATA_ROOT`), expression and survival are fetched and merged in
+one call. These chunks are not evaluated here because they need the mirror.
+
+```{r eval = FALSE}
+d <- cohort_merged("GSE31210", c("TP53", "GAPDH"), type = "DFS", clin = TRUE)
+colnames(d)
+```
+
+```{r eval = FALSE}
+# a signature instead of one gene: any R expression on the gene columns
+d <- cohort_merged("GSE31210", NULL, type = "RFS", signature = "0.5*TP53+0.5*GAPDH")
+```
+
+## An end-to-end analysis, offline
+
+We build a small cohort that has exactly the merged schema (`ID`, `<token>_time`,
+`<token>_status`, one column per marker) and run the same functions the package
+runs on real data.
+
+```{r}
+mk_cohort <- function(n, prefix, seed) {
+  set.seed(seed)
+  x <- rnorm(n, 10, 1)
+  hr <- exp(0.35 * (x - 10))
+  data.frame(ID = sprintf("%s%03d", prefix, seq_len(n)),
+             OS_time = round(rexp(n, hr / 8) + 0.05, 3),
+             OS_status = rbinom(n, 1, 0.65),
+             TP53 = x,
+             GAPDH = rnorm(n, 12, 1),
+             age = round(runif(n, 35, 82)),
+             stage = factor(sample(c("I", "II", "III"), n, TRUE,
+                                   prob = c(0.4, 0.35, 0.25))))
+}
+d1 <- mk_cohort(220, "P", 1)
+d2 <- mk_cohort(180, "Q", 2)
+```
+
+Univariable Cox, one model per covariate:
+
+```{r}
+u <- COX_analysis(d1, type = "OS", cont_Variates = c("TP53", "age"),
+                  cate_Variates = "stage", method = "uni")
+u$results_table[, c("Variates", "Level", "N", "HR", "HR95L", "HR95H", "Pvalue")]
+```
+
+A multivariable model. Since this version the default is the **fail-safe**
+(`auto_repair = FALSE`): if a covariate cannot be co-estimated, the model is
+*refused* with its reasons instead of being quietly reduced.
+
+```{r}
+m <- COX_analysis(d1, type = "OS", cont_Variates = c("TP53", "age"),
+                  cate_Variates = "stage", method = "multi")
+m$estimable
+m$results_table[, c("Variates", "Level", "HR", "Pvalue")]
+```
+
+```{r}
+d1$flat <- 1                       # a covariate with no variation at all
+bad <- COX_analysis(d1, type = "OS", cont_Variates = c("TP53", "flat"),
+                    method = "multi")
+bad$estimable
+bad$offending_terms
+bad$reasons
+```
+
+The refusal is a value, not an exception, so a script does not have to wrap the
+call in `tryCatch()`. Ask for the old behaviour explicitly and every modification
+is recorded:
+
+```{r}
+fixed <- COX_analysis(d1, type = "OS", cont_Variates = c("TP53", "flat"),
+                      method = "multi", auto_repair = TRUE)
+fixed$metadata$dropped_covariates[, c("variable", "reason")]
+```
+
+Kaplan-Meier with a cut-point rule:
+
+```{r, fig.height = 4.5}
+km <- plot_km(d1, type = "OS", marker = "TP53", cutpoint = "median")
+km$logrank_p
+```
+
+Time-dependent ROC at one, three and five years (`plot_roc()` returns one
+ggplot per time point, with the estimated AUC attached as the `"AUC"`
+attribute):
+
+```{r, fig.height = 4.5}
+roc <- lapply(c(1, 3, 5), function(t)
+  plot_roc(d1, type = "OS", marker = "TP53", predict.time = t))
+round(vapply(roc, function(p) attr(p, "AUC"), numeric(1)), 3)
+roc[[1]]
+```
+
+## Two-stage meta-analysis across cohorts
+
+The same marker in several cohorts is pooled in one call. This version defaults
+to `method = "REML"`; `"DL"` reproduces the previous estimator and `"HK"` gives
+the Hartung-Knapp-Sidik-Jonkman interval. One call always reports the token each
+cohort contributed, the pooling class of that token and the manifest of the run.
+
+```{r}
+mt <- cpas_meta(c("P", "Q"), marker = "TP53", type = "OS",
+                merged = list(P = d1, Q = d2))
+mt$per_dataset[, c("dataset", "endpoint", "pooling_class", "n", "events", "HR")]
+mt$pooled[, c("method", "k", "HR", "lower", "upper", "p", "tau2", "I2",
+              "pi_lower", "pi_upper", "pi_alt_lower", "pi_alt_upper")]
+```
+
+## The manifest
+
+Every analysis result carries a manifest: which cohorts, which token, which
+pooling classes, what was dropped and why, the meta-analysis method, tau^2, I^2,
+both prediction intervals, the versions and the timestamp. It prints and it
+converts to a table.
+
+```{r}
+cpas_manifest(mt)
+```
+
+```{r}
+head(as.data.frame(cpas_manifest(mt)), 8)
+```
+
+## The Shiny application
+
+The bundled application drives the same exported functions.
+
+```{r eval = FALSE}
+run_cpas_app()
+```
+
+## Where to go next
+
+* `vignette("endpoints-and-pooling", package = "CanPAS")` covers the endpoint
+  semantics layer, the two pooling modes, shared-patient overlap and the
+  manifest in detail.
+* `?cpas_meta`, `?COX_analysis`, `?cpas_km_pooled`, `?plot_meta_forest` are the
+  reference pages for the analysis functions.

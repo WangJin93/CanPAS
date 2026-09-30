@@ -1,0 +1,128 @@
+url: https://github.com/WangJin93/CanPAS
+template:
+  bootstrap: 5
+development:
+  mode: auto
+lang: en
+
+home:
+  title: CanPAS - Cancer Prognosis Analysis Suite
+  description: >
+    Survival analysis across public cancer cohorts through one uniform schema:
+    endpoint families resolved per cohort, Kaplan-Meier and cut-point analysis,
+    univariable and multivariable Cox models, time-dependent ROC, cross-cohort
+    random-effects meta-analysis with a fail-safe default, pooled Kaplan-Meier
+    and competing risks.
+
+authors:
+  Jin Wang:
+    href: https://github.com/WangJin93
+
+navbar:
+  structure:
+    left:  [intro, reference, articles, news]
+    right: [search, github]
+  components:
+    github:
+      icon: fa-github
+      href: https://github.com/WangJin93/CanPAS
+
+reference:
+  - title: Endpoints and endpoint semantics
+    desc: The pooling families, the token each cohort resolves to, and the pooling class of every cohort x family cell.
+    contents:
+      - endpoint_family
+      - endpoint_resolve
+      - endpoint_options
+      - endpoint_semantics
+      - endpoint_pooling_class
+
+  - title: Endpoint adjudication
+    desc: A blinded rating sheet for the endpoint annotation, and the agreement calculator for a filled sheet.
+    contents:
+      - endpoint_adjudication
+      - endpoint_agreement
+
+  - title: Data access
+    desc: The uniform "merged data" schema and the local/TCGA sources behind it.
+    contents:
+      - get_data
+      - get_expr_data
+      - merge_surv_expr
+      - cohort_merged
+      - get_signature_value
+      - tcga_get_expr
+      - tcga_merged
+      - tcga_surv_table
+      - tcga_local_tables
+      - tcga_project_dataset
+      - tcga_retained
+      - tcga_gene_expr_df
+      - canonical_type
+      - short_name
+
+  - title: Survival analysis
+    contents:
+      - plot_km
+      - quick_km
+      - plot_roc
+      - quick_roc
+      - COX_analysis
+      - COX_by_genes
+      - COX_by_datasets
+      - COX_screen_adjust
+      - forest_plot
+      - competing_risk_COX
+      - cif_fit
+      - plot_cif
+
+  - title: Cross-cohort meta-analysis
+    desc: Two-stage pooling with method = REML / DL / HK / FE, pooling = family / exact and overlap = warn / refuse / dedupe.
+    contents:
+      - cpas_meta
+      - cpas_meta_panel
+      - plot_meta_forest
+      - plot_meta_panel
+      - loo_meta
+      - cpas_km_pooled
+      - plot_cpas_km
+      - plot_cpas_km_perdataset
+
+  - title: Shared-patient overlap
+    contents:
+      - cohort_overlap
+
+  - title: Batch diagnostics
+    desc: The per-cohort expression distribution and the within-cohort cut-points, before anything is pooled.
+    contents:
+      - batch_diagnostics
+      - plot_batch_diagnostics
+
+  - title: Reproducibility
+    desc: The per-result analysis manifest, and the index of the curation steps, registers and additional files.
+    contents:
+      - cpas_manifest
+      - cpas_reproducibility_index
+      - cpas_pipeline_steps
+
+  - title: Package and application
+    contents:
+      - run_cpas_app
+
+  - title: Datasets
+    contents:
+      - dataset_info
+      - ID_map
+
+  - title: Print and conversion methods
+    desc: The S3 print methods of the result objects, and the manifest's as.data.frame().
+    contents:
+      - starts_with("print.")
+      - as.data.frame.cpas_manifest
+
+articles:
+  - title: Articles
+    navbar: ~
+    contents:
+      - CanPAS-getting-started
+      - endpoints-and-pooling

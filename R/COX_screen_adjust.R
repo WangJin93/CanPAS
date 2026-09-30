@@ -12,6 +12,11 @@
 #' @param cate_Variates Categorical covariate column names.
 #' @param precision Decimal places for formatted values.
 #' @param p.threshold Significance threshold for entering the multivariate step.
+#' @param auto_repair Passed to \code{\link{COX_analysis}} for the multivariate
+#'   step. \code{FALSE} (default) is the fail-safe: when the multivariate model
+#'   is not estimable exactly as requested, it is refused with its reasons and
+#'   offending terms (\code{multi_metadata$estimable} is \code{FALSE}) instead
+#'   of being silently reduced. \code{TRUE} restores the automatic repair.
 #' @return List with:
 #'   \item{\code{result}:}{long data.frame with univariate and (if available)
 #'     multivariate HR/CI/p per covariate and level}
@@ -47,7 +52,8 @@ COX_screen_adjust <- function(df, type = "OS",
                                 cont_Variates = NULL,
                                 cate_Variates = NULL,
                                 precision = 3,
-                                p.threshold = 0.05) {
+                                p.threshold = 0.05,
+                                auto_repair = FALSE) {
   if (!is.numeric(p.threshold) || p.threshold <= 0 || p.threshold >= 1)
     stop("'p.threshold' must lie in (0, 1).")
   cont_Variates <- if (is.null(cont_Variates)) character(0) else as.character(cont_Variates)
@@ -65,35 +71,54 @@ COX_screen_adjust <- function(df, type = "OS",
   if (!length(sig_vars)) {
     message("No covariate reached p < ", p.threshold,
             "; only univariate results are returned.")
-    multi <- NULL
+    multi <- NULL; refused <- NULL
     out <- u
   } else if (length(sig_vars) < 2L) {
     message("Only one covariate is significant (", sig_vars,
             "); a multivariate model needs at least two covariates. ",
             "Only univariate results are returned.")
-    multi <- NULL
+    multi <- NULL; refused <- NULL
     out <- u
   } else {
+    refused <- NULL
     multi <- COX_analysis(df, type = type,
                           cont_Variates = intersect(sig_vars, cont_Variates),
                           cate_Variates = intersect(sig_vars, cate_Variates),
-                          method = "multi", precision = precision)
-    m <- multi$results_table
-    key_cols <- c("Var1", "Level")
-    mm <- merge(m[, c(key_cols, "HR", "HR95L", "HR95H", "Pvalue")],
-                u[, c(key_cols, "HR", "HR95L", "HR95H", "Pvalue")],
-                by = key_cols, suffixes = c("_multi", "_uni"), all = FALSE)
-    out <- merge(u, mm[, c(key_cols, grep("_multi$", colnames(mm), value = TRUE))],
-                 by = key_cols, all.x = FALSE)
-    out <- out[order(out$seq), , drop = FALSE]
-    # a model the repair had to reduce is no longer an adjusted model: say so
-    # here as well, since this function is exported on its own
-    if (isTRUE(multi$metadata$reduced))
-      message("The multivariate model could only keep ",
-              length(multi$metadata$final_covariates), " covariate(s) (",
-              paste(multi$metadata$final_covariates, collapse = ", "),
-              ") and is not adjusted for confounding: ",
-              paste(multi$metadata$reduced_note, collapse = " "))
+                          method = "multi", precision = precision,
+                          auto_repair = auto_repair)
+    if (!isTRUE(multi$estimable)) {
+      # fail-safe refusal: the univariable table is what is reported, and the
+      # refusal is stated with its reasons instead of a reduced model being
+      # presented as an adjusted one
+      message("The multivariate model is not estimable exactly as requested ",
+              "(auto_repair = ", isTRUE(auto_repair), ") and was not fitted ",
+              "(no model, no coefficients). Reasons: ",
+              paste(multi$reasons, collapse = "; "),
+              ". Offending term(s): ",
+              paste(multi$offending_terms, collapse = ", "),
+              ". The univariate results are unaffected; pass auto_repair = TRUE ",
+              "to fit the repaired model.")
+      refused <- multi
+      multi <- NULL
+      out <- u
+    } else {
+      m <- multi$results_table
+      key_cols <- c("Var1", "Level")
+      mm <- merge(m[, c(key_cols, "HR", "HR95L", "HR95H", "Pvalue")],
+                  u[, c(key_cols, "HR", "HR95L", "HR95H", "Pvalue")],
+                  by = key_cols, suffixes = c("_multi", "_uni"), all = FALSE)
+      out <- merge(u, mm[, c(key_cols, grep("_multi$", colnames(mm), value = TRUE))],
+                   by = key_cols, all.x = FALSE)
+      out <- out[order(out$seq), , drop = FALSE]
+      # a model the repair had to reduce is no longer an adjusted model: say so
+      # here as well, since this function is exported on its own
+      if (isTRUE(multi$metadata$reduced))
+        message("The multivariate model could only keep ",
+                length(multi$metadata$final_covariates), " covariate(s) (",
+                paste(multi$metadata$final_covariates, collapse = ", "),
+                ") and is not adjusted for confounding: ",
+                paste(multi$metadata$reduced_note, collapse = " "))
+    }
   }
   if ("seq" %in% colnames(out)) out$seq <- NULL
 
@@ -162,6 +187,35 @@ COX_screen_adjust <- function(df, type = "OS",
        uni_table = u,
        multi_table = if (!is.null(multi)) multi$results_table else NULL,
        multi_metadata = if (!is.null(multi)) multi$metadata else NULL,
+       multi_estimable = if (!is.null(multi)) isTRUE(multi$estimable) else
+         if (!is.null(refused)) FALSE else NA,
+       multi_reasons = if (!is.null(multi)) multi$reasons else
+         if (!is.null(refused)) refused$reasons else character(0),
+       multi_offending_terms = if (!is.null(refused)) refused$offending_terms else character(0),
+       multi_refused = refused,
        cont_Variates = cont_Variates,
-       cate_Variates = cate_Variates)
+       cate_Variates = cate_Variates,
+       manifest = .cpas_manifest_new(
+         analysis = "COX_screen_adjust",
+         cohorts = deparse(substitute(df)),
+         family = endpoint_family(type),
+         token = as.character(type)[1],
+         selection_rule = sprintf(paste0("univariate Cox for every supplied covariate; covariates with ",
+                                         "p < %s enter one multivariate model (auto_repair = %s)"),
+                                  format(p.threshold), isTRUE(auto_repair)),
+         dropped_covariates = if (!is.null(multi) && nrow(multi$metadata$dropped_covariates))
+           data.frame(cohort = deparse(substitute(df)),
+                      variable = multi$metadata$dropped_covariates$variable,
+                      detail = multi$metadata$dropped_covariates$detail,
+                      reason = multi$metadata$dropped_covariates$reason,
+                      stringsAsFactors = FALSE) else NULL,
+         cut_rule = "not applicable (Cox model on a continuous marker; no cut-point is searched)",
+         ph_test = if (!is.null(multi) && !is.null(multi$manifest$ph_test))
+           multi$manifest$ph_test else NULL,
+         notes = c(sprintf("auto_repair = %s%s", isTRUE(auto_repair),
+                           if (isTRUE(auto_repair)) "" else " (fail-safe, the package default)"),
+                   if (!is.null(refused))
+                     paste0("multivariate model refused (not estimable): ",
+                            paste(refused$reasons, collapse = "; "))
+                   else NULL)))
 }

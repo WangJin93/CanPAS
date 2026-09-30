@@ -33,6 +33,32 @@ run_04_qc_report <- function() {
 #   并在控制台打印可读摘要。
 # 用法: Rscript 04_qc_report.R [<ProjectRoot>] [<ACC1> <ACC2> ...]
 # -----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({library(dplyr)})
 args <- commandArgs(trailingOnly=TRUE)
 ROOT <- if (length(args) >= 1) args[1] else "~/data/Project/CanPAS"
@@ -48,7 +74,7 @@ summary_row <- function(acc) {
   if (file.exists(file.path(ROOT,"data/processed/surv", paste0(acc,"_surv.rds"))))
     surv <- tryCatch(readRDS(file.path(ROOT,"data/processed/surv", paste0(acc,"_surv.rds"))),
                      error=function(e) NULL)
-  info <- tryCatch(read.csv(file.path(ROOT,"data/dataset_info.csv")), error=function(e) NULL)
+  info <- tryCatch(read.csv(file.path(ROOT,cpas_data("dataset_info.csv"))), error=function(e) NULL)
   gpl <- if (!is.null(info)) {
     g <- info$GPL[info$Accession == acc]
     if (!length(g)) NA_character_ else as.character(g[1])
@@ -87,7 +113,7 @@ summary_row <- function(acc) {
 }
 
 res <- do.call(rbind, lapply(accs, summary_row))
-outf <- file.path(ROOT, "pipeline/out", paste0("QC_", format(Sys.Date(), "%Y%m%d"), ".csv"))
+outf <- cpas_out(paste0("QC_", format(Sys.Date(), "%Y%m%d"), ".csv"))
 write.csv(res, outf, row.names=FALSE)
 print(res, row.names=FALSE)
 message("QC table written to ", outf)
@@ -116,10 +142,42 @@ run_16_verify_catalog_mirror <- function() {
 #  10. 表达表在镜像里、其平台(GPL)注释表却不在镜像里 —— 06_upload_db.R 旧版把 GPL
 #      上传挂在 n_expr>79 上留下的缺陷类(GPL1223/GPL16686/GPL27956)。报 ERROR。
 #      (只查镜像;TCGA 行不进镜像,已排除)
+#  11. 文档化的列规则:把 catalog 的 N / n_events / n_surv / n_<family> 从**已交付的本地
+#      产物**重算后逐行比较(规则见 CanPAS/README.md "Column semantics")。纯本地判定,
+#      --no-db 下同样生效。报 ERROR。可用 CPAS_VERIFY_FAST_EXPR=1 改用镜像表达表列名。
+#  12. 终点语义表覆盖:data/endpoint_semantics.csv 必须恰好覆盖 catalog 的 cohort x family
+#      单元(5 个合并家族 x 197 行,共 985 格),不重不漏,且 PoolingClass 非空且在固定词表内
+#      (Exact-equivalent / Clinically-related / Not-poolable / Unknown / Absent)。报 ERROR。
 #
 # 输出: pipeline/out/catalog_mirror_check.csv / REPORT_catalog_mirror_check.md
 # 用法: CPAS_DB_PASSWORD=... Rscript pipeline/R/16_verify_catalog_mirror.R [--no-db]
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressPackageStartupMessages({
   library(RMySQL)
 })
@@ -315,6 +373,173 @@ if (db_ok) {
               length(na_n), paste(na_n, collapse = ", "))
   }
 }
+# 11. 文档化的列规则（A2a，纯本地判定，不依赖镜像）：把 catalog 的 N / n_events /
+#     n_surv / n_<family> 从**已交付的本地产物**重算一遍并逐行比较。规则（见 CanPAS/README.md
+#     "Column semantics"）：
+#       N        = |{同时出现在已交付表达表与已交付生存表、且主要终点可用的样本}|
+#                  （status 与 time 都非缺失）
+#       n_events = 上述 N 个样本中的主要终点事件数
+#       n_surv   = 已交付生存表的行数（含终点不可用的行）
+#       n_<fam>  = 同一规则按家族计算；仅在 catalog 登记了该家族（EP_<fam> 非 NA）时比较，
+#                  因为未登记家族的 n_<fam> 不在该规则的定义域内
+#     列名大小写不敏感：A5-PCPG / IMmotion150 / GSE3218 / GSE76019 / GSE76039 交付的是
+#     `os_status` / `pfs_status` / `efs_status` 小写列。
+#     这 33 个 TCGA 行没有本地表达表（按需从 UCSC Xena 取数），只比较生存表一侧的计数。
+#     设置 CPAS_VERIFY_FAST_EXPR=1 时用镜像表达表的列名代替本地 rds（仍然要求 n_expr 与
+#     镜像一致，见上一条检查），避免每次校验都读数百 MB 的本地表达表。
+surv_dir <- file.path(root, "data/processed/surv")
+expr_dir <- file.path(root, "data/expr")
+surv_idx <- sub("_surv\\.rds$", "", list.files(surv_dir, pattern = "_surv\\.rds$"))
+expr_idx <- sub("\\.rds$", "", list.files(expr_dir, pattern = "\\.rds$"))
+pick_one <- function(a, idx) {
+  v <- unique(c(a, gsub("_", "-", a, fixed = TRUE), gsub("-", "_", a, fixed = TRUE)))
+  h <- v[v %in% idx]
+  if (length(h)) h[1] else NA_character_
+}
+col_ci <- function(cols, want) {
+  hit <- cols[tolower(cols) == tolower(want)]
+  if (length(hit)) hit[1] else NA_character_
+}
+fast_expr <- identical(Sys.getenv("CPAS_VERIFY_FAST_EXPR", unset = ""), "1")
+rule_bad <- character(0)
+conv_ok <- character(0)
+expr_cache <- new.env(parent = emptyenv())
+rule_fams <- sub("^EP_", "", grep("^EP_(OS|DSS|DFS|PFS|MFS)$", colnames(di), value = TRUE))
+has_conv <- "n_convention" %in% colnames(di)
+num_tok <- function(x) sprintf("(^|[^0-9])%s([^0-9]|$)", x)
+for (i in seq_len(nrow(di))) {
+  a <- as.character(di$Accession[i])
+  sf <- pick_one(a, surv_idx)
+  if (is.na(sf)) {
+    rule_bad <- c(rule_bad, sprintf("%s no delivered survival table (data/processed/surv/%s_surv.rds)", a, a))
+    next
+  }
+  s <- tryCatch(readRDS(file.path(surv_dir, paste0(sf, "_surv.rds"))), error = function(e) NULL)
+  if (is.null(s)) {
+    rule_bad <- c(rule_bad, sprintf("%s delivered survival table unreadable", a))
+    next
+  }
+  cols <- colnames(s)
+  if (!is.na(di$n_surv[i]) && nrow(s) != di$n_surv[i])
+    rule_bad <- c(rule_bad, sprintf("%s n_surv %s!=%s", a, di$n_surv[i], nrow(s)))
+  prim <- as.character(di$EndpointPrimary[i])
+  if (is.na(prim) || !nzchar(prim) || !prim %in% rule_fams) next
+  sc <- col_ci(cols, paste0(prim, "_status")); tc <- col_ci(cols, paste0(prim, "_time"))
+  if (is.na(sc) || is.na(tc)) {
+    rule_bad <- c(rule_bad, sprintf("%s primary token %s has no <TOKEN>_status/<TOKEN>_time column pair", a, prim))
+    next
+  }
+  usable <- !is.na(s[[sc]]) & !is.na(s[[tc]])
+  # expression sample ids: delivered local table (default) or the mirror's column list
+  exn <- NULL
+  ef <- pick_one(a, expr_idx)
+  if (fast_expr) {
+    if (exists("con") && !is.null(con) && db_ok) {
+      adb <- gsub("-", "_", a, fixed = TRUE)
+      if (adb %in% expr_db) exn <- setdiff(dbListFields(con, adb), c("row_names", "ID_REF"))
+    }
+  } else if (!is.na(ef)) {
+    if (is.null(expr_cache[[ef]])) {
+      e <- tryCatch(readRDS(file.path(expr_dir, paste0(ef, ".rds"))), error = function(e) NULL)
+      assign(ef, if (is.null(e)) character(0) else colnames(e), envir = expr_cache)
+    }
+    exn <- setdiff(expr_cache[[ef]], c("ID_REF", "row_names"))
+  }
+  keep <- if (is.null(exn) || !length(exn)) usable else usable & rownames(s) %in% exn
+  n_calc <- sum(keep); ev_calc <- sum(s[[sc]][keep] == 1, na.rm = TRUE)
+  conv <- if (has_conv) as.character(di$n_convention[i]) else "join-restricted"
+  if (identical(conv, "clinical-record")) {
+    # documented convention exception: N / n_events are the audited clinical-record counts.
+    # Verify that the Note states both the registered pair and this join-restricted counterpart,
+    # so the exception is auditable and cannot silently drift.
+    nt <- as.character(di$Note[i])
+    ok_reg  <- !is.na(di$N[i]) && !is.na(di$n_events[i]) &&
+      grepl(sprintf("(^|[^0-9])%s/%s([^0-9]|$)", di$N[i], di$n_events[i]), nt)
+    ok_join <- grepl(num_tok(n_calc), nt) && grepl(num_tok(ev_calc), nt)
+    if (ok_reg && ok_join) {
+      conv_ok <- c(conv_ok, sprintf("%s (%s: registered %s/%s, join-restricted %s/%s)",
+                                    a, conv, di$N[i], di$n_events[i], n_calc, ev_calc))
+    } else {
+      rule_bad <- c(rule_bad, sprintf(
+        "%s n_convention=clinical-record but its Note does not state the registered pair %s/%s and the join-restricted pair %s/%s",
+        a, di$N[i], di$n_events[i], n_calc, ev_calc))
+    }
+    # every family count on a clinical-record row is a clinical-record count as well
+    # (GSE31312 registers "OS 475/172 + PFS 475"), so the per-family comparison is
+    # skipped for these rows; the Note cross-check above is what verifies them.
+    next
+  } else {
+    if (!is.na(di$N[i]) && n_calc != di$N[i])
+      rule_bad <- c(rule_bad, sprintf("%s N %s!=%s", a, di$N[i], n_calc))
+    if (!is.na(di$n_events[i]) && ev_calc != di$n_events[i])
+      rule_bad <- c(rule_bad, sprintf("%s n_events %s!=%s", a, di$n_events[i], ev_calc))
+  }
+  for (f in rule_fams) {
+    tk <- as.character(di[[paste0("EP_", f)]][i])
+    nf_cat <- di[[paste0("n_", f)]][i]
+    if (is.na(tk) || !nzchar(tk)) {
+      # a family the catalog does not register must carry 0 (or NA), never a stale count
+      if (!is.na(nf_cat) && nf_cat != 0)
+        rule_bad <- c(rule_bad, sprintf("%s n_%s=%s but EP_%s is NA (family not registered)",
+                                        a, f, nf_cat, f))
+      next
+    }
+    sc2 <- col_ci(cols, paste0(tk, "_status")); tc2 <- col_ci(cols, paste0(tk, "_time"))
+    if (is.na(sc2) || is.na(tc2)) {
+      rule_bad <- c(rule_bad, sprintf("%s %s token %s has no <TOKEN>_status/<TOKEN>_time column pair", a, f, tk))
+      next
+    }
+    ok2 <- !is.na(s[[sc2]]) & !is.na(s[[tc2]])
+    if (!is.null(exn) && length(exn)) ok2 <- ok2 & rownames(s) %in% exn
+    nf <- sum(ok2)
+    if (!is.na(nf_cat) && nf != nf_cat)
+      rule_bad <- c(rule_bad, sprintf("%s n_%s %s!=%s", a, f, nf_cat, nf))
+  }
+}
+suppressWarnings(rm(expr_cache))
+add_issue("error",
+          "documented column rule violated (N / n_events / n_surv / n_<family> recomputed from the delivered artefacts)",
+          length(rule_bad), paste(utils::head(rule_bad, 10), collapse = ", "))
+
+# 12. 终点语义表覆盖（A2b，纯本地判定）：data/endpoint_semantics.csv 必须恰好覆盖 catalog 的
+#     每个 cohort x family 单元（5 个合并家族 x 197 行），不多不少、不重复，且
+#     PoolingClass 非空并在固定词表内（Exact-equivalent / Clinically-related /
+#     Not-poolable / Unknown / Absent —— 最后一个只用于该家族无终点的单元，不是池化判定）。
+ep_path <- file.path(root, "data/endpoint_semantics.csv")
+if (!file.exists(ep_path)) {
+  add_issue("error", "endpoint_semantics.csv missing (expected data/endpoint_semantics.csv)",
+            1L, ep_path)
+} else {
+  ep <- tryCatch(utils::read.csv(ep_path, stringsAsFactors = FALSE), error = function(e) NULL)
+  if (is.null(ep) || !all(c("Accession", "Family", "PoolingClass") %in% colnames(ep))) {
+    add_issue("error", "endpoint_semantics.csv unreadable or missing Accession/Family/PoolingClass",
+              1L, ep_path)
+  } else {
+    want <- expand.grid(Accession = acc, Family = rule_fams, stringsAsFactors = FALSE)
+    key_w <- paste(want$Accession, want$Family, sep = "||")
+    key_h <- paste(as.character(ep$Accession), as.character(ep$Family), sep = "||")
+    missing_cells <- setdiff(key_w, key_h)
+    extra_cells <- setdiff(key_h, key_w)
+    dup_cells <- unique(key_h[duplicated(key_h)])
+    det <- c(if (length(missing_cells)) paste0("missing: ", paste(utils::head(missing_cells, 10), collapse = ", ")),
+             if (length(extra_cells)) paste0("not a catalog cohort x family cell: ", paste(utils::head(extra_cells, 10), collapse = ", ")),
+             if (length(dup_cells)) paste0("duplicated: ", paste(utils::head(dup_cells, 10), collapse = ", ")))
+    add_issue("error",
+              "endpoint_semantics.csv does not cover exactly the catalog's cohort x family cells",
+              sum(!key_w %in% key_h) + sum(!key_h %in% key_w) + sum(duplicated(key_h)),
+              paste(det, collapse = " | "))
+    voc <- c("Exact-equivalent", "Clinically-related", "Not-poolable", "Unknown", "Absent")
+    pc <- trimws(as.character(ep$PoolingClass))
+    bad_pc <- is.na(pc) | !nzchar(pc) | !pc %in% voc
+    add_issue("error",
+              "endpoint_semantics.csv has a blank or out-of-vocabulary PoolingClass",
+              sum(bad_pc),
+              if (any(bad_pc)) paste(utils::head(paste0(as.character(ep$Accession)[bad_pc], "/",
+                                                        as.character(ep$Family)[bad_pc], "='",
+                                                        as.character(ep$PoolingClass)[bad_pc], "'"), 10),
+                                     collapse = ", ") else "")
+  }
+}
 add_issue("info", "rows without endpoint annotation", sum(!chk$endpoint_annotated),
           paste(acc[!chk$endpoint_annotated], collapse = ", "))
 
@@ -326,9 +551,9 @@ fam_counts <- vapply(fams, function(f) {
 }, integer(1))
 
 res <- do.call(rbind, issues)
-out_csv <- file.path(root, "pipeline/out/catalog_mirror_check.csv")
+out_csv <- cpas_out("catalog_mirror_check.csv")
 utils::write.csv(res, out_csv, row.names = FALSE)
-utils::write.csv(chk, file.path(root, "pipeline/out/catalog_mirror_check_detail.csv"), row.names = FALSE)
+utils::write.csv(chk, cpas_out("catalog_mirror_check_detail.csv"), row.names = FALSE)
 
 rep_lines <- c(
   "# catalog <-> mirror consistency check", "",
@@ -343,8 +568,13 @@ rep_lines <- c(
   "", "## Checks", "",
   "| level | check | n | detail |", "|---|---|---|---|",
   sprintf("| %s | %s | %d | %s |", res$level, res$check, res$n,
-          substr(gsub("\\|", "/", res$detail), 1, 400)))
-out_md <- file.path(root, "pipeline/out/REPORT_catalog_mirror_check.md")
+          substr(gsub("\\|", "/", res$detail), 1, 400)),
+  "", "## Convention exceptions (documented, not rule violations)", "",
+  sprintf("convention exceptions verified: %d [%s]", length(conv_ok),
+          paste(sub(" \\(.*$", " clinical-record", conv_ok), collapse = ", ")),
+  "",
+  if (length(conv_ok)) paste0("- ", conv_ok) else "- none")
+out_md <- cpas_out("REPORT_catalog_mirror_check.md")
 writeLines(rep_lines, out_md)
 cat(paste(rep_lines, collapse = "\n"), "\n")
 
@@ -407,16 +637,42 @@ run_36_screen_geo_candidates <- function() {
 # 用法: Rscript pipeline/R/36_screen_geo_candidates.R [ROOT]
 # ----------------------------------------------------------------------------
 
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || is.na(a[1])) b else a
 
 ROOT <- commandArgs(trailingOnly = TRUE)
 ROOT <- if (length(ROOT)) ROOT[1] else Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS")
 RAW <- file.path(ROOT, "data/raw")
-OUT <- file.path(ROOT, "pipeline/out")
+OUT <- cpas_out_root()
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 MIN_EFF <- 50L
 
-di <- read.csv(file.path(ROOT, "data/dataset_info.csv"), check.names = FALSE, stringsAsFactors = FALSE)
+di <- read.csv(file.path(ROOT, cpas_data("dataset_info.csv")), check.names = FALSE, stringsAsFactors = FALSE)
 
 # ---------------------------------------------------------------- 基础工具
 strip_quotes <- function(x) {
@@ -972,15 +1228,41 @@ run_37_geo_expansion_screen <- function() {
 # 用法: Rscript pipeline/R/37_geo_expansion_screen.R [ROOT]
 # ----------------------------------------------------------------------------
 
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || is.na(a[1])) b else a
 
 ROOT <- commandArgs(trailingOnly = TRUE)
 ROOT <- if (length(ROOT)) ROOT[1] else Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS")
-OUT  <- file.path(ROOT, "pipeline/out")
+OUT  <- cpas_out_root()
 HDR  <- file.path(OUT, "geo_expansion_headers")
 MIN_EFF <- 50L                       # 门槛：有效样本数必须 **大于** 50
 
-di <- read.csv(file.path(ROOT, "data/dataset_info.csv"), check.names = FALSE, stringsAsFactors = FALSE)
+di <- read.csv(file.path(ROOT, cpas_data("dataset_info.csv")), check.names = FALSE, stringsAsFactors = FALSE)
 cat_names <- unique(di$Type)
 # 15 个缺口癌种（catalog 里有 TCGA、没有 GEO）
 GAP_TYPES <- c("Kidney Cancer", "Adrenocortical Cancer", "Endometrial Cancer",
@@ -2056,6 +2338,32 @@ run_113_sweep_gpl_mirror_divergence <- function() {
 # 用法: Rscript pipeline/R/113_sweep_gpl_mirror_divergence.R [ROOT]
 # 输出: pipeline/out/gpl_divergence_sweep.csv
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressPackageStartupMessages({ library(RMySQL); library(stringr) })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -2063,7 +2371,7 @@ ROOT <- if (length(args)) args[1] else
   Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS")
 ROOT <- path.expand(ROOT)
 
-dl <- read.csv(file.path(ROOT, "data/dataset_info.csv"),
+dl <- read.csv(file.path(ROOT, cpas_data("dataset_info.csv")),
                stringsAsFactors = FALSE, check.names = FALSE)
 if (!"GPL" %in% names(dl)) stop("dataset_info.csv 里没有 GPL 列")
 cat_plats <- sort(unique(unlist(strsplit(as.character(dl$GPL[!is.na(dl$GPL) & dl$GPL != ""]),
@@ -2128,8 +2436,8 @@ for (tab in mirror_tabs) {
     verdict = verdict, stringsAsFactors = FALSE)
 }
 out <- do.call(rbind, res)
-dir.create(file.path(ROOT, "pipeline/out"), showWarnings = FALSE, recursive = TRUE)
-write.csv(out, file.path(ROOT, "pipeline/out/gpl_divergence_sweep.csv"), row.names = FALSE)
+dir.create(cpas_out_root(), showWarnings = FALSE, recursive = TRUE)
+write.csv(out, cpas_out("gpl_divergence_sweep.csv"), row.names = FALSE)
 
 cat("\n=== platforms referenced by the catalog ===\n")
 print(out[out$in_catalog, c("table","local_probes","local_annotated_probes","local_expanded_pairs",

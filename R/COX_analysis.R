@@ -30,15 +30,25 @@
 #' \code{metadata$reduced_note} states which covariate(s) survived and why the
 #' others could not be co-estimated. Default \code{2}. Only a model with no
 #' estimable covariate at all is refused.
-#' @param drop_nonestimable Logical. If \code{TRUE} (default) a non-estimable
-#' multivariable model is repaired instead of being refused: constant or nearly
-#' constant covariates and perfectly separated or very rare levels are screened
-#' out first, covariates that still keep the joint model from converging are
-#' then removed one at a time (or, when the offender cannot be isolated, by
-#' trying each removal in turn, down to a single covariate). Every decision is
-#' reported in \code{metadata$dropped_covariates} and
-#' \code{metadata$drop_notes}. If \code{FALSE} the model is fitted on the raw
-#' complete cases and an error is raised when it is not estimable.
+#' @param auto_repair Logical. \code{FALSE} (the default, and the fail-safe) is
+#' the new behaviour: a multivariable model that would need covariates dropped,
+#' levels merged or patients excluded is \strong{not} fitted. The function
+#' returns an explicit \code{not estimable} result instead - class
+#' \code{cpas_not_estimable} (also carrying \code{cpas_COX}), with an empty
+#' \code{models} list, \code{status = "not estimable"}, the reason(s) in
+#' \code{$reasons} and the offending term(s) in \code{$offending_terms}, plus
+#' what the repair \emph{would} have done in
+#' \code{$metadata$would_have_dropped}. \code{TRUE} restores the previous
+#' behaviour: constant or nearly constant covariates and perfectly separated or
+#' very rare levels are screened out first, covariates that still keep the joint
+#' model from converging are then removed one at a time (or, when the offender
+#' cannot be isolated, by trying each removal in turn, down to a single
+#' covariate), and every modification is recorded in
+#' \code{metadata$dropped_covariates}, \code{metadata$drop_notes} and the
+#' analysis manifest.
+#' @param drop_nonestimable Deprecated. The old name of \code{auto_repair};
+#' when supplied it sets \code{auto_repair} (and warns). Use
+#' \code{auto_repair} instead.
 #' @return List of class \code{cpas_COX}:
 #'   \item{\code{input_params}:}{echoed inputs}
 #'   \item{\code{processed_data}:}{analysis data after numeric/factor coercion}
@@ -53,7 +63,18 @@
 #'     models, \code{dropped_covariates} and \code{drop_notes} describing every
 #'     covariate that the automatic repair removed and why, plus
 #'     \code{final_covariates}, \code{reduced} and \code{reduced_note} which
-#'     flag a model that had to be reduced below \code{min_covariates}}
+#'     flag a model that had to be reduced below \code{min_covariates};
+#'     \code{estimable} and \code{status} state whether a model was produced at
+#'     all}
+#'   \item{\code{manifest}:}{the analysis manifest
+#'     (\code{\link{cpas_manifest}}): covariates, rows and covariates dropped
+#'     with reasons, the proportional-hazards check, the versions and the
+#'     timestamp}
+#'   \item{\code{reasons}, \code{offending_terms}, \code{estimable}, \code{status}:}{
+#'     present on every result; for a fail-safe refusal (\code{auto_repair =
+#'     FALSE}) they carry the reason(s) and the offending term(s) and
+#'     \code{estimable} is \code{FALSE}, which is how a caller detects the
+#'     refusal without a \code{tryCatch()}}
 #' @details
 #' Status is treated as \code{1 = event, 0 = censored}; rows with missing
 #' time/status are dropped. For categorical covariates the first factor level
@@ -61,6 +82,13 @@
 #' \code{HR = NA} and are intended for plot annotations. Univariate models are
 #' estimated on the complete cases of \code{(time, status, variable)};
 #' multivariate models on the complete cases of all covariates together.
+#'
+#' The default is the fail-safe: \code{auto_repair = FALSE}. A multivariable
+#' model that is not estimable exactly as requested comes back as an object that
+#' says so (\code{estimable = FALSE}, \code{status = "not estimable"}, with the
+#' reasons and the offending terms) rather than as a quietly reduced model. This
+#' is a deliberate change of default; \code{auto_repair = TRUE} restores the
+#' automatic repair described next and records every modification.
 #'
 #' A multivariable model can fail not because the data are unusable but because
 #' one covariate is: a constant or nearly constant continuous covariate, a
@@ -108,8 +136,17 @@ COX_analysis <- function(df,
                          precision = 3,
                          min_level_n = 5L,
                          min_covariates = 2L,
-                         drop_nonestimable = TRUE) {
+                         drop_nonestimable = NULL,
+                         auto_repair = FALSE) {
   method <- match.arg(method)
+  if (!is.null(drop_nonestimable)) {
+    warning("'drop_nonestimable' is deprecated; use 'auto_repair' instead ",
+            "(auto_repair = ", isTRUE(drop_nonestimable), ").", call. = FALSE)
+    auto_repair <- isTRUE(drop_nonestimable)
+  }
+  if (!is.logical(auto_repair) || length(auto_repair) != 1L || is.na(auto_repair))
+    stop("'auto_repair' must be TRUE or FALSE.", call. = FALSE)
+  df_name <- deparse(substitute(df))
   if (!is.data.frame(df)) stop("'df' must be a data.frame.")
   cont_Variates <- if (is.null(cont_Variates)) character(0) else as.character(cont_Variates)
   cate_Variates <- if (is.null(cate_Variates)) character(0) else as.character(cate_Variates)
@@ -253,10 +290,60 @@ COX_analysis <- function(df,
                                min_level_n = min_level_n)
     drops <- screen$drops
     vars <- screen$keep
+    if (!isTRUE(auto_repair)) {
+      # ---- fail-safe (auto_repair = FALSE, the default) -------------------
+      # The screen above is not applied; it is a gate. Anything it would have
+      # changed (a covariate dropped, levels merged or patients excluded) makes
+      # the model "not estimable": the reasons and the offending terms are
+      # returned and no model is produced. Silent repair is what this default
+      # removes; auto_repair = TRUE restores it and records every modification.
+      reasons <- character(0); offenders <- character(0)
+      if (nrow(drops)) {
+        offenders <- unique(c(offenders, as.character(drops$variable)))
+        reasons <- c(reasons, sprintf("%s [%s]: %s", drops$variable, drops$detail,
+                                      drops$reason))
+      }
+      if (!length(vars))
+        reasons <- c(reasons, "no covariate at all survives the screening")
+      dat <- dd; diag <- NULL
+      if (!length(reasons) && length(vars)) {
+        dat <- screen$data[stats::complete.cases(screen$data[c("time", "status", vars)]), ,
+                           drop = FALSE]
+        if (!nrow(dat) || sum(dat$status == 1) < 2L) {
+          reasons <- c(reasons,
+                       "fewer than 2 events in the complete cases of the requested covariates")
+        } else {
+          fml <- stats::as.formula(paste0("Surv(time, status) ~ ",
+                                          paste0("`", vars, "`", collapse = " + ")))
+          diag <- .cpas_COX_diag(fml, dat[, c("time", "status", vars), drop = FALSE])
+          if (!diag$ok) {
+            reasons <- c(reasons, diag$reason)
+            off <- .cpas_COX_drop_worst(diag, vars)
+            offenders <- unique(c(offenders,
+                                  if (length(off) == 1L && !is.na(off)) off else vars))
+          }
+        }
+      }
+      if (length(reasons)) {
+        message("Multivariable Cox model is not estimable and was NOT repaired ",
+                "(auto_repair = FALSE, the package default). Reasons: ",
+                paste(reasons, collapse = "; "),
+                ". Offending term(s): ", paste(offenders, collapse = ", "),
+                ". Pass auto_repair = TRUE to repair the model and record every ",
+                "modification, or remove / combine the offending covariate(s).")
+        return(.cpas_not_estimable(
+          df_name = df_name, type = type, method = method, precision = precision,
+          processed_data = processed_data, cont = cont_Variates, cate = cate_Variates,
+          all_vars = all_vars, kept = vars, reasons = reasons,
+          offending_terms = offenders, screen = drops, n_complete = nrow(dd),
+          n_supplied = nrow(dd)))
+      }
+      # nothing to repair: fit exactly the model that was asked for
+    }
     if (!length(vars))
       stop("Multivariate Cox model is not estimable: ",
            paste(unique(drops$reason), collapse = "; "), ".", call. = FALSE)
-    if (drop_nonestimable) {
+    if (isTRUE(auto_repair)) {
       repeat {
         # take the screened data: categorical levels removed above must stay
         # removed, otherwise the rare/separated levels return and the model
@@ -307,7 +394,7 @@ COX_analysis <- function(df,
         if (!length(vars)) break
       }
     } else {
-      dat <- dd
+      if (is.null(diag)) dat <- dd
     }
     if (is.null(diag) || !diag$ok || !length(vars)) {
       # report the whole sequence, not just the last fit that failed: the
@@ -383,7 +470,7 @@ COX_analysis <- function(df,
   rownames(results_table) <- NULL
 
   result_obj <- list(
-    input_params = list(df_name = deparse(substitute(df)), type = type,
+    input_params = list(df_name = df_name, type = type,
                         cont_Variates = cont_Variates,
                         cate_Variates = cate_Variates,
                         method = method, precision = precision,
@@ -418,7 +505,44 @@ COX_analysis <- function(df,
                     cont_vars = cont_Variates, cate_vars = cate_Variates,
                     analysis_type = ifelse(method == "uni", "Univariate COX",
                                            "Multivariate COX"),
-                    survival_type = type))
+                    survival_type = type,
+                    status = "estimable", estimable = TRUE,
+                    not_estimable = FALSE, auto_repair = isTRUE(auto_repair)),
+    status = "estimable", estimable = TRUE, not_estimable = FALSE,
+    reasons = character(0), offending_terms = character(0))
+  ph_tb <- if (!is.null(summaries$ph_test)) {
+    tb <- as.data.frame(summaries$ph_test$table)
+    data.frame(cohort = df_name, term = rownames(tb), p = tb$p,
+               stringsAsFactors = FALSE)
+  } else NULL
+  n_multi <- if (method == "multi") result_obj$metadata$complete_cases else NA_integer_
+  result_obj$manifest <- .cpas_manifest_new(
+    analysis = "COX_analysis",
+    cohorts = df_name,
+    family = if (is.null(type)) NA_character_ else endpoint_family(type),
+    token = if (is.null(type)) NA_character_ else as.character(type),
+    token_role = if (is.null(type)) NA_character_ else "resolved for this cohort",
+    selection_rule = sprintf(paste0("%s Cox model requested on the columns of the supplied data frame; ",
+                                    "covariates: %s; complete-case analysis"),
+                             ifelse(method == "uni", "one univariable model per covariate (univariable)",
+                                    "one joint multivariable"),
+                             if (length(all_vars)) paste(all_vars, collapse = ", ") else "(none)"),
+    dropped_rows = if (method == "multi" && !is.na(n_multi) &&
+                       nrow(processed_data) > n_multi)
+      data.frame(cohort = df_name, n_dropped = nrow(processed_data) - n_multi,
+                 reason = "incomplete cases of (time, status, requested covariates)",
+                 stringsAsFactors = FALSE) else NULL,
+    dropped_covariates = if (nrow(drops))
+      data.frame(cohort = df_name, variable = drops$variable, detail = drops$detail,
+                 reason = drops$reason, stringsAsFactors = FALSE) else NULL,
+    cut_rule = "not applicable (Cox model on a continuous marker; no cut-point is searched)",
+    ph_test = if (is.null(ph_tb)) NULL else list(table = ph_tb),
+    notes = c(sprintf("auto_repair = %s%s", isTRUE(auto_repair),
+                      if (isTRUE(auto_repair))
+                        " (modifications to keep the model estimable are recorded in $metadata$dropped_covariates and $manifest$dropped_covariates)"
+                      else " (fail-safe, the package default): a model that would need covariates dropped, levels merged or rows excluded is reported as not estimable"),
+              if (length(failed)) paste0("variable(s) skipped as not estimable: ",
+                                         paste(failed, collapse = "; ")) else NULL))
   class(result_obj) <- "cpas_COX"
   result_obj
 }

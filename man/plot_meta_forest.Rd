@@ -2,7 +2,7 @@
 % Please edit documentation in R/cpas_meta.R
 \name{plot_meta_forest}
 \alias{plot_meta_forest}
-\title{整合分析森林图}
+\title{Forest plot of an integrative (meta) analysis}
 \usage{
 plot_meta_forest(
   x,
@@ -18,36 +18,49 @@ plot_meta_forest(
 )
 }
 \arguments{
-\item{x}{一个 \code{cpas_meta} 对象。}
+\item{x}{An object of class \code{cpas_meta}.}
 
-\item{digits}{图中标注保留的小数位(默认 4)。}
+\item{digits}{Decimal places used for the annotations in the figure
+(default 4).}
 
-\item{show_stars}{是否在面板左缘绘制逐队列显著性星号(\code{*} p<0.05、\code{**} p<0.01、\code{***} p<0.001)，默认 \code{TRUE}。}
+\item{show_stars}{Whether to draw the per-cohort significance stars at the
+left edge of the panel (\code{*} p<0.05, \code{**} p<0.01,
+\code{***} p<0.001); default \code{TRUE}.}
 
-\item{label_size}{合并 HR / 95\% PI 标注的字号(默认 4.2)。}
+\item{label_size}{Font size of the pooled HR / 95\% PI annotation (default 4.2).}
 
-\item{star_size}{星号与 \code{Overall} 文字的字号，默认 \code{0.85 * label_size}。}
+\item{star_size}{Font size of the stars and of the \code{Overall} label;
+defaults to \code{0.85 * label_size}.}
 
-\item{y_headroom}{y 轴顶部留白，避免 Overall 菱形及其 CI 被面板裁切(默认 3.6)。}
+\item{y_headroom}{Head-room at the top of the panel so the \code{Overall}
+diamond and its confidence interval are not clipped (default 3.6).}
 
-\item{x_frac}{面板左缘起的横向比例位置，用于锚定星号与合并标注(默认 0.02)。}
+\item{x_frac}{Horizontal position, as a fraction from the left edge of the
+panel, used to anchor the stars and the pooled annotation (default 0.02).}
 
-\item{label_lift}{合并标注相对 Overall 行的纵向偏移(默认 1)。}
+\item{label_lift}{Vertical offset of the pooled annotation relative to the
+\code{Overall} row (default 1).}
 
-\item{label_where}{合并标注位置：\code{"inside"} 置于面板左上角内，\code{"subtitle"} 置于面板上方(默认 \code{"inside"})。}
+\item{label_where}{Where to place the pooled annotation: \code{"inside"}
+puts it in the top-left corner of the panel and \code{"subtitle"} above the
+panel (default \code{"inside"}).}
 
-\item{...}{保留，暂未使用。}
+\item{...}{Reserved, currently unused.}
 }
 \value{
-ggplot 对象。
+A \code{ggplot} object.
 }
 \description{
-绘制 \code{\link{cpas_meta}} 的逐队列 HR(95\% CI) 与合并 HR 森林图。
+Draws the per-cohort HR (95\% CI) together with the pooled HR of
+a \code{\link{cpas_meta}} result as a forest plot.
 }
 \details{
-自本版起，星号与合并标注锚定在由固定坐标轴留白反推得到的\strong{有限}数据值上
-(不再用 \code{x = -Inf}：那会经 \code{log10} 变成 \code{NaN}，文本图层被静默丢弃并告警)。
-逐队列显著性星号位于面板内左缘，合并 HR / 95\% PI 标注默认置于面板左上角内。
+The stars and the pooled annotation are anchored to a \strong{finite} data
+value derived from the fixed axis expansion, not to \code{x = -Inf}: an
+infinite value becomes \code{NaN} through the log10 scale, and the text layer
+is then silently dropped with a warning. The per-cohort significance stars sit
+at the left edge inside the panel, and the pooled HR / 95\% PI annotation is
+placed in the top-left corner of the panel by default.
 }
 \examples{
 \dontrun{

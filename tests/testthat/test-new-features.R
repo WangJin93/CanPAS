@@ -185,8 +185,20 @@ test_that("perfect separation is reported instead of a meaningless HR", {
   expect_error(COX_analysis(d, type = "OS", cont_Variates = "sep", method = "uni"),
                "No estimable covariate remained")
 
-  # COX_analysis, multivariable: refuse to publish the model
-  expect_error(COX_analysis(d, type = "OS", cont_Variates = "sep", method = "multi"),
+  # COX_analysis, multivariable: the fail-safe default refuses to publish the
+  # model and says why, without needing a tryCatch()
+  r_sep <- suppressMessages(COX_analysis(d, type = "OS", cont_Variates = "sep",
+                                         method = "multi"))
+  expect_false(isTRUE(r_sep$estimable))
+  expect_equal(r_sep$status, "not estimable")
+  expect_length(r_sep$models, 0L)
+  expect_true("sep" %in% r_sep$offending_terms)
+  expect_s3_class(r_sep, "cpas_COX")
+
+  # ... and with the repair explicitly requested it is still an error when
+  # nothing at all can be estimated
+  expect_error(suppressMessages(COX_analysis(d, type = "OS", cont_Variates = "sep",
+                                             method = "multi", auto_repair = TRUE)),
                "not estimable")
 
   # a clean covariate in the same data set still works

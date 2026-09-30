@@ -8,7 +8,8 @@ cpas_meta_panel(
   datasets,
   genes,
   type = "OS",
-  method = c("RE", "FE"),
+  method = c("REML", "DL", "HK", "FE", "RE"),
+  pi_method = c("t", "normal", "HK"),
   confounders = NULL,
   min_events = 5,
   process_duplicates = "max",
@@ -27,8 +28,15 @@ cpas_meta_panel(
 family is resolved per dataset and the token used is reported in
 \code{per_dataset$endpoint} and \code{endpoints}.}
 
-\item{method}{Pooling method for \code{\link{cpas_meta}}: \code{"RE"}
-(random effects, DerSimonian-Laird, default) or \code{"FE"} (fixed effect).}
+\item{method}{Pooling method passed to \code{\link{cpas_meta}}:
+\code{"REML"} (the default, matching \code{cpas_meta}), \code{"DL"},
+\code{"HK"}, \code{"FE"}; \code{"RE"} is accepted as \code{"DL"}.}
+
+\item{pi_method}{Prediction-interval rule passed to \code{\link{cpas_meta}}:
+\code{"t"} (default, \eqn{t_{k-2}}), \code{"normal"} or \code{"HK"}. The
+rule used is recorded in \code{input$pi_method} and in the manifest; the
+per-gene table carries the primary interval in \code{pi_lower}/\code{pi_upper}
+and the clearly labelled alternative in \code{pi_alt_lower}/\code{pi_alt_upper}.}
 
 \item{confounders}{Optional covariates adjusted for inside every dataset.}
 
@@ -55,7 +63,7 @@ List of class \code{cpas_meta_panel}:
     pooled), \code{datasets_used}, \code{total_n}, \code{total_events},
     \code{HR}, \code{lower}, \code{upper}, \code{p}, \code{P_adj},
     \code{P_adj_text}, \code{I2}, \code{tau2}, \code{pi_lower}, \code{pi_upper},
-    \code{p_heterogeneity}}
+    \code{pi_alt_lower}, \code{pi_alt_upper}, \code{p_heterogeneity}}
   \item{\code{per_dataset}:}{long table: \code{gene}, \code{dataset},
     \code{endpoint}, \code{n}, \code{events}, \code{HR}, \code{lower},
     \code{upper}, \code{p}}
@@ -76,6 +84,14 @@ This is the pooled counterpart of the per-dataset screening table: for each
 gene the per-dataset estimates are pooled (inverse variance, random or fixed
 effects) instead of merely being listed, and the gene-level p-values are
 adjusted for multiple testing.
+
+\strong{Defaults follow \code{\link{cpas_meta}}.} The pooling method defaults
+to \code{"REML"} - the same default as \code{cpas_meta} (spec B10a: the panel
+previously defaulted to \code{"DL"}, which made two calls with the same
+arguments disagree; \code{"DL"} remains available explicitly, and passing
+\code{method = "DL"} reproduces the earlier panel tables exactly). The
+prediction-interval rule defaults to \code{pi_method = "t"}, matching
+\code{cpas_meta}.
 }
 \details{
 Each gene is standardised within each dataset (per SD) before pooling, so the
@@ -93,5 +109,10 @@ listed). A gene with fewer than two usable datasets is reported with
                          type = "DFS")
    p$table
    plot_meta_panel(p)
+   ## the same panel with the earlier DerSimonian-Laird default, and with the
+   ## normal-approximation prediction interval
+   p_dl <- cpas_meta_panel(c("GSE31210", "GSE37745"), genes = "TP53",
+                           type = "DFS", method = "DL", pi_method = "normal")
+   p_dl$input$method; p_dl$input$pi_method
 }
 }

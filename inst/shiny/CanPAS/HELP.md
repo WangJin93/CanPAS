@@ -21,7 +21,7 @@ Two analysis groups, each with three pages (no deeper nesting):
 | **Single dataset analysis · COX by genes** | One univariable Cox model per gene in ONE dataset, with Benjamini-Hochberg FDR across the genes; forest plot above the table. |
 | **Multi-datasets analysis · COX by datasets** | The same univariable Cox (one gene) in several datasets: per-dataset estimates with FDR and a forest plot (no pooling). |
 | **Multi-datasets analysis · Pooled KM** | Integrates several datasets in two ways: IPD pooling of the patients (median split inside each dataset) and time-point pooling of S(t) via log(-log S); landmark table, per-dataset curves and per-dataset estimates. |
-| **Multi-datasets analysis · Meta-analysis** | Two-stage meta-analysis for one gene/signature (per-SD standardisation, RE/FE pooling, I2, prediction interval, leave-one-out) or a per-gene panel mode (`cpas_meta_panel()`) that pools every gene of a list and adjusts the gene-level FDR. |
+| **Multi-datasets analysis · Meta-analysis** | Two-stage meta-analysis for one gene/signature (per-SD standardisation, pooling with **REML (default) / DL / HK / FE**, I2, **two** prediction intervals, shared-patient overlap handling, leave-one-out) or a per-gene panel mode (`cpas_meta_panel()`) that pools every gene of a list and adjusts the gene-level FDR. The page reports the **pooling class** of every cohort's endpoint token (Exact-equivalent / Clinically-related / Not-poolable / Unknown / Absent) and the **analysis manifest** of the run. |
 | **Help** | This document, rendered inside the app: navigation, page-by-page description, endpoint families, statistical caveats and runnable R examples built from the package's own functions and real cohorts. |
 | **Methods** | Data-processing pipeline (produce → clean → mirror), standardisation rules, endpoint-family pooling principles, the family-to-token map and the statistical caveats. |
 
@@ -235,7 +235,7 @@ families) instead of the fine-grained token list.
 | **Proportional hazards** | `cox.zph` GLOBAL test is included with the multivariable Cox output and flagged when p < 0.05. | Report the test; consider time-stratified or time-varying models if it fails. |
 | **Endpoint tokens** | Family-level analysis; the token actually used is always shown, and mixed tokens inside a family raise a warning. | State the per-cohort tokens in the paper (e.g. RFS in GEO, DFI in TCGA). |
 | **Sample sizes** | Reported n = rows entering the model; exclusions for missing endpoint/marker are counted. | Use the reported n, not the catalog N. |
-| **Not implemented** | Competing risks (Fine-Gray), time-varying covariates, immortal-time/landmark correction, multiple-testing correction for gene panels, prediction intervals. | Handle these outside the app if the question requires them. |
+| **Not implemented** | Time-varying covariates, immortal-time/landmark correction, functional-form modelling, inverse-probability-of-censoring time-dependent ROC. | Handle these outside the app if the question requires them. (Prediction intervals, the Hartung-Knapp-Sidik-Jonkman variance and gene-panel FDR **are** implemented.) |
 
 ## R examples (real functions, real cohorts)
 

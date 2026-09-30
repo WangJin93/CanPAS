@@ -2,7 +2,7 @@
 % Please edit documentation in R/cpas_meta.R
 \name{cpas_km_pooled}
 \alias{cpas_km_pooled}
-\title{整合 KM（各队列内中位分组）}
+\title{Pooled Kaplan-Meier (marker split inside every cohort)}
 \usage{
 cpas_km_pooled(
   merged,
@@ -17,71 +17,106 @@ cpas_km_pooled(
 )
 }
 \arguments{
-\item{merged}{命名列表：各队列 merge_surv_expr 的 merged data.frame；
-名称需为 catalog 中的 accession, 以便按家族解析具体终点。
-返回对象包含 \code{dataset_endpoints} (各数据集实际使用的终点)。}
+\item{merged}{Named list of the cohorts' \code{merge_surv_expr} merged
+data.frames. The names must be catalog accessions so the concrete endpoint
+token of each cohort can be resolved. The result carries
+\code{dataset_endpoints}, the token every dataset actually used.}
 
-\item{marker}{基因列名。}
+\item{marker}{Gene column name.}
 
-\item{type}{终点（OS/RFS/...）。}
+\item{type}{Endpoint family or token (OS/RFS/...).}
 
-\item{method}{"ipd"/"meta"/"both"。}
+\item{method}{\code{"ipd"}, \code{"meta"} or \code{"both"}.}
 
-\item{landmarks}{输出时点(年)。}
+\item{landmarks}{Time points, in years, at which the pooled survival
+probabilities are tabulated and drawn (default 1, 3 and 5 years).}
 
-\item{meta_method}{RE = 随机效应(DerSimonian-Laird,默认),FE = 固定效应。}
+\item{meta_method}{Pooling method for the time-point survival probabilities:
+\code{"RE"}/\code{"DL"} (DerSimonian-Laird random effects, the default kept
+for continuity with the published curves), \code{"REML"}, \code{"HK"} or
+\code{"FE"} (fixed effect).}
 
-\item{cut}{高/低分组规则,三种:\code{"median"}(默认)= 各队列内部取前 50%,
-即 High = marker 高于**该队列自身**的中位数;\code{"top_pct"}= 各队列内部按
-表达**从高到低排序取前 \code{top_pct}\%** 为 High(阈值 = 该队列的
-\eqn{100 - top_pct} 百分位,\code{top_pct = 25} 即前 25% 为高表达);
-\code{"custom"}= 用绝对阈值 \code{cut_value},大于阈值为 High、小于等于为 Low。
-绝对阈值在这里是有意义的,因为镜像提供的所有矩阵都在 log2 尺度上(论文 2.3 节),
-同一个数值在每个队列里含义相同;但按百分位分组才是"高表达 vs 低表达"的常规读法,
-应用界面只提供 median 与 top_pct 两种。这里刻意**不**提供"逐队列搜索最佳切点":
-那会把论文 3.4 节量化的切点搜索膨胀在每个队列各做一遍,合并后误差被叠加。}
+\item{cut}{High/low split rule, one of three: \code{"median"} (default) takes
+the top 50\% inside every cohort, i.e. High = marker above \strong{that
+cohort's own} median; \code{"top_pct"} sorts each cohort by expression and
+takes the highest \code{top_pct}\% as High (threshold = that cohort's
+\eqn{100 - top_pct} percentile, so \code{top_pct = 25} means the top 25\%
+are high expressors); \code{"custom"} uses the absolute threshold
+\code{cut_value}, with High above it and Low at or below it. An absolute
+threshold is meaningful here because every matrix served by the mirror is on
+the log2 scale (Section 2.3 of the accompanying paper), so one value means
+the same thing in every cohort; percentile splits are nevertheless the
+conventional reading of "high versus low expression", and the application
+offers only median and top_pct. A per-cohort search for the best cut point
+is deliberately \strong{not} offered: it would repeat, cohort by cohort,
+the cut-point search quantified in Section 3.4 and compound its inflation
+when pooled.}
 
-\item{top_pct}{\code{cut = "top_pct"} 时的百分比:1-99 之间的单个有限数值,表达
-最高的 \code{top_pct}\% 患者记为 High。阈值用 \code{stats::quantile()} 的
-默认插值(type 7)计算;当多名患者的表达值恰好等于阈值时,分入 High 的比例可能
-略高于 \code{top_pct}\%,各队列实际阈值与人数都会返回(\code{cohort_thresholds}、
-\code{cutpoint})。若某队列因此一侧为空,该队列记入 \code{empty_cohorts} 并附
-原因,不参与合并。}
+\item{top_pct}{Percentage for \code{cut = "top_pct"}: a single finite value
+between 1 and 99; the patients with the highest \code{top_pct}\% of
+expression are High. The threshold is computed with the default
+\code{stats::quantile()} interpolation (type 7); when several patients sit
+exactly on the threshold the High group can be slightly larger than
+\code{top_pct}\%, and the actual threshold and counts are returned
+(\code{cohort_thresholds}, \code{cutpoint}). A cohort left one-sided by
+the rule is recorded in \code{empty_cohorts} with its reason and does not
+enter the pool.}
 
-\item{cut_value}{\code{cut = "custom"} 时的阈值:单个有限数值,作用于 log2 表达
-(或签名得分)。若某队列在阈值一侧没有病人,该队列记入 \code{empty_cohorts}
-并附原因,不参与合并。}
+\item{cut_value}{Threshold for \code{cut = "custom"}: a single finite value on
+the log2 expression scale (or on the signature score). A cohort with no
+patient on one side of the threshold is recorded in \code{empty_cohorts}
+with its reason and does not enter the pool.}
 }
 \value{
-普通 \code{list}(没有 class 属性;不是 S3 对象,没有对应的方法分派):
-  \item{\code{df}:}{合并后的分析数据(time/status/marker/dataset/group)}
-  \item{\code{datasets}, \code{n_high}, \code{n_low}, \code{method}, \code{cutpoint}:}{纳入的数据集与分组规模}
-  \item{\code{dataset_endpoints}:}{各数据集实际使用的终点 token(命名向量)}
-  \item{\code{cut}, \code{top_pct}, \code{cut_value}, \code{cutpoint}:}{实际使用的
-    分组规则、其参数或阈值,以及可直接打印的规则说明;\code{cohort_thresholds}
-    给出 \code{cut = "top_pct"} 时各队列的实际阈值}
-  \item{\code{n_dropped}, \code{empty_cohorts}, \code{empty_reasons}:}{分组规则对纳入的
-    队列是穷尽的(\code{n_dropped} 恒为 0);阈值/百分位规则在某队列里把一侧取空时,
-    该队列记入 \code{empty_cohorts} 并附原因,不参与合并}
-  \item{\code{skipped_cohorts}, \code{skipped_reasons}:}{因数据不足被排队的队列及其原因
-    ——终点无法解析、缺少列、完整(time, status, marker)三元组少于 10 行,或 marker
-    在该队列中只有一个取值。这些队列不参与合并,但**不会被静默丢弃**}
-  \item{\code{fit}, \code{logrank_p}, \code{logrank_p_stratified}:}{method 为 ipd/both 时的 survfit 与 log-rank p(合并 / 按队列分层)}
-  \item{\code{meta_landmarks}, \code{meta_curve}:}{method 为 meta/both 时的时点合并生存表与细网格曲线}
+An ordinary \code{list} (no class attribute; not an S3 object, so
+  there is no method dispatch):
+  \item{\code{df}:}{the pooled analysis data (time/status/marker/dataset/group)}
+  \item{\code{datasets}, \code{n_high}, \code{n_low}, \code{method}, \code{cutpoint}:}{the cohorts included and the size of each group}
+  \item{\code{dataset_endpoints}:}{the endpoint token every dataset actually used (named vector)}
+  \item{\code{cut}, \code{top_pct}, \code{cut_value}, \code{cutpoint}:}{the split
+    rule actually used, its parameter or threshold, and a printable description
+    of the rule; \code{cohort_thresholds} gives the per-cohort threshold when
+    \code{cut = "top_pct"}}
+  \item{\code{n_dropped}, \code{empty_cohorts}, \code{empty_reasons}:}{the split
+    rule is exhaustive for the cohorts that entered (\code{n_dropped} is always
+    0); when a threshold or percentile rule leaves one side empty in a cohort,
+    that cohort is recorded in \code{empty_cohorts} with its reason and does not
+    enter the pool}
+  \item{\code{skipped_cohorts}, \code{skipped_reasons}:}{cohorts excluded for
+    insufficient data and why - the endpoint could not be resolved, a column is
+    missing, fewer than 10 complete (time, status, marker) rows, or the marker
+    takes a single value in that cohort. These cohorts do not enter the pool but
+    are \strong{never silently dropped}}
+  \item{\code{fit}, \code{logrank_p}, \code{logrank_p_stratified}:}{the
+    \code{survfit} and the log-rank p (pooled / stratified by cohort) when
+    \code{method} is ipd or both}
+  \item{\code{meta_landmarks}, \code{meta_curve}:}{the time-point pooled
+    survival table and the fine-grid curve when \code{method} is meta or both}
+  \item{\code{manifest}:}{the analysis manifest
+    (\code{\link{cpas_manifest}}): the cut-point rule, the number of cut-points
+    searched (0: no search), the cohorts skipped and why, the versions and the
+    timestamp}
 }
 \description{
-每个队列 marker 中位切 High/Low，然后按 method 合并：
-  "ipd"  直接合并患者做 pooled survfit（log-rank 同时给 pooled 与按队列分层两个 p）；
-  "meta" 两阶段：对每个时点各队列 KM 的生存概率 S(t) 用 log(-log S) 转换后逆方差合并(RE/FE)，
-          得到合并生存曲线与 1/3/5 年表；
-  "both" 同时输出两者。
+Splits each cohort into High/Low at the marker and then pools by
+\code{method}:
+  \code{"ipd"}  pools the patients directly into one \code{survfit} (the
+    log-rank test is reported both unstratified and stratified by cohort);
+  \code{"meta"} two-stage: at every time point the cohorts' KM survival
+    probabilities S(t) are transformed with log(-log S) and pooled by inverse
+    variance (RE/FE), giving a pooled survival curve and the 1/3/5-year table;
+  \code{"both"} returns both routes.
 }
 \details{
-每队列内部按自身 marker 中位数分组(High = marker > median),因此比较的是"高于本队列中位"
-与"低于本队列中位"的风险,而不是跨队列的绝对阈值;需要绝对阈值时请用 \code{plot_km()} 逐队列分析。
-IPD 合并同时给出未分层与按队列分层的 log-rank p,报告时建议给出后者。
-时点合并中,超出某队列最长随访的时点会沿用该队列最后一次观察到的 S(t)(\code{extend = TRUE}),
-每个时点实际贡献的队列数记录在 \code{meta_landmarks$k} 中。
+Each cohort is split on its own marker median (High = marker > that cohort's
+median), so what is compared is the risk above versus below each cohort's own
+median and not an absolute threshold across cohorts; when an absolute
+threshold is wanted, use \code{plot_km()} cohort by cohort. The IPD route
+reports the log-rank p both unstratified and stratified by cohort; reporting
+the stratified one is recommended. In the time-point route, a time point
+beyond a cohort's longest follow-up reuses that cohort's last observed S(t)
+(\code{extend = TRUE}), and the number of cohorts actually contributing at
+each time point is recorded in \code{meta_landmarks$k}.
 }
 \examples{
 \dontrun{

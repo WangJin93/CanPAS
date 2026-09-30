@@ -36,6 +36,15 @@ ui_mod_cox <- function(id) {
                     value = FALSE),
       numericInput(ns("p_thr"), .lab("Multivariable p threshold", "Covariates whose univariable p is below this enter the multivariable model; the rest are shown in the univariable panel only."),
                    value = 0.05, min = 0, max = 1, step = 0.01),
+      selectInput(ns("multi_failsafe"), .lab("If a covariate cannot be co-estimated",
+                   paste0("The package default (auto_repair = FALSE) is fail-safe: a multivariable model that ",
+                          "would need a covariate dropped, a level merged or patients excluded is NOT fitted, ",
+                          "and the page states the reason and the offending term instead. Choose ",
+                          "'Repair automatically' (auto_repair = TRUE) to drop / merge / exclude what is ",
+                          "necessary, fit the remaining model and list every modification.")),
+                  choices = c("Refuse and report (fail-safe, package default)" = "refuse",
+                              "Repair automatically (record every modification)" = "repair"),
+                  selected = "refuse"),
       br(),
       shinyWidgets::actionBttn(ns("go"), "Run COX analysis",
                                style = "gradient", color = "success",
@@ -250,6 +259,7 @@ server_mod_cox <- function(id, rv, dataset_info) {
         for (v in clin_chosen) {
           if (is.numeric(df[[v]])) conts <- c(conts, v) else cates <- c(cates, v)
         }
+        auto_repair <- identical(input$multi_failsafe %||% "refuse", "repair")
         uni <- COX_analysis(df, type = family, cont_Variates = conts,
                             cate_Variates = cates, method = "uni")
         # the multivariable model keeps the covariates that reached the
@@ -270,11 +280,23 @@ server_mod_cox <- function(id, rv, dataset_info) {
           # must not hide the univariable results and figures
           multi <- tryCatch(COX_analysis(df, type = family,
                                 cont_Variates = intersect(keep_vars, conts),
-                                cate_Variates = intersect(keep_vars, cates), method = "multi"),
+                                cate_Variates = intersect(keep_vars, cates), method = "multi",
+                                auto_repair = auto_repair),
                             error = function(e) structure(list(message = conditionMessage(e)),
                                                           class = "cpas_multi_error"))
-          multi_error <- if (inherits(multi, "cpas_multi_error")) multi$message else NULL
-          if (inherits(multi, "cpas_multi_error")) multi <- NULL
+          multi_error <- if (inherits(multi, "cpas_multi_error")) multi$message else
+            if (!isTRUE(multi$estimable))
+              paste0("no model was fitted (auto_repair = ",
+                     if (auto_repair) "TRUE" else "FALSE (fail-safe, package default)",
+                     "). ", paste(multi$reasons, collapse = "; "),
+                     if (length(multi$offending_terms))
+                       paste0(" Offending term(s): ",
+                              paste(multi$offending_terms, collapse = ", "), ".") else "",
+                     if (isTRUE(auto_repair)) "" else
+                       " Switch 'If a covariate cannot be co-estimated' to 'Repair automatically' to fit the reduced model.")
+            else NULL
+          if (inherits(multi, "cpas_multi_error")) multi <- NULL else
+            if (!isTRUE(multi$estimable)) multi <- NULL   # refused: no model to plot
           sel_note <- sprintf("Covariates with univariable p < %.4f: %s", thr,
                               paste(keep_vars, collapse = ", "))
           if (!is.null(multi_error))
@@ -288,12 +310,13 @@ server_mod_cox <- function(id, rv, dataset_info) {
         screen <- tryCatch(suppressMessages(suppressWarnings(
                     COX_screen_adjust(df, type = family,
                                       cont_Variates = conts, cate_Variates = cates,
-                                      p.threshold = thr))),
+                                      p.threshold = thr, auto_repair = auto_repair))),
                   error = function(e) structure(list(message = conditionMessage(e)),
                                                 class = "cpas_screen_error"))
         screen_error <- if (inherits(screen, "cpas_screen_error")) screen$message else NULL
         if (inherits(screen, "cpas_screen_error")) screen <- NULL
         list(df = df, uni = uni, multi = multi, multi_error = multi_error,
+             auto_repair = auto_repair,
              screen = screen, screen_error = screen_error, ep = ep, family = family,
              multi_drops = tryCatch(multi$metadata$dropped_covariates, error = function(e) NULL),
              multi_reduced = isTRUE(tryCatch(multi$metadata$reduced, error = function(e) FALSE)),
@@ -367,12 +390,18 @@ server_mod_cox <- function(id, rv, dataset_info) {
                   r$acc, .endpoint_status_label(r$family, r$ep), nrow(r$df), ev,
                   ifelse(length(r$clinical) == 0, "(none, marker only)",
                          paste(r$clinical, collapse = ", "))))
+      cat(sprintf("\nFail-safe default: auto_repair = %s (%s)",
+                  if (isTRUE(r$auto_repair)) "TRUE" else "FALSE",
+                  if (isTRUE(r$auto_repair))
+                    "a non-estimable multivariable model is repaired and every modification is recorded"
+                  else "a non-estimable multivariable model is refused with its reasons, not repaired"))
+      cat("\nPooling: family (Exact-equivalent + Clinically-related; cpas_meta(pooling = \"exact\") keeps only Exact-equivalent rows)")
       cat(sprintf("\nMarker: %s", if (identical(r$kind, "gene"))
         paste0("gene ", r$gene) else paste0("signature ", r$sig)))
       cat("\n", r$selection_note %||% "", "\n", sep = "")
       mi <- tryCatch(r$multi$metadata, error = function(e) NULL)
       if (!is.null(r$multi_error)) {
-        cat("\nMultivariable model: NOT ESTIMATED. Reasons: ",
+        cat("\nMultivariable model: NOT ESTIMABLE (no model was fitted). Reasons: ",
             r$multi_error, "\n", sep = "")
         cat("The univariable results above are unaffected.\n")
       }

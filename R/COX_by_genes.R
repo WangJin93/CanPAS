@@ -133,7 +133,22 @@ COX_by_genes <- function(df, type = "OS", genes) {
                      individual_models = individual_models,
                      individual_summaries = individual_summaries,
                      results_table = res,
-                     metadata = metadata)
+                     metadata = metadata,
+                     manifest = .cpas_manifest_new(
+                       analysis = "COX_by_genes",
+                       cohorts = deparse(substitute(df)),
+                       family = endpoint_family(type),
+                       token = as.character(type)[1],
+                       selection_rule = sprintf(paste0("one univariable Cox model per gene (%d gene(s)) on the ",
+                                                       "complete cases of the supplied data frame"),
+                                                length(genes)),
+                       cut_rule = "not applicable (univariable Cox model on a continuous marker; no cut-point is searched)",
+                       dropped_covariates = if (length(reasons)) data.frame(
+                         cohort = deparse(substitute(df)), variable = names(reasons),
+                         detail = "univariable model", reason = unlist(reasons),
+                         stringsAsFactors = FALSE) else NULL,
+                       notes = sprintf("%d of %d gene(s) could not be estimated and are reported in $metadata$failure_reasons",
+                                       length(reasons), length(genes))))
   class(result_obj) <- "cpas_COX_by_genes"
   result_obj
 }

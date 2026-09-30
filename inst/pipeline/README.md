@@ -48,6 +48,28 @@ pipeline/out/             reports and logs written by the pipeline
 Credentials are read from the environment (`CPAS_DB_PASSWORD`, optional
 `CPAS_DB_USER` / `CPAS_DB_HOST`); see `Renviron.example`.
 
+## Where the scripts write
+
+Derived outputs no longer depend on the current working directory.  Every step
+resolves them explicitly:
+
+| path | resolved from | default |
+|---|---|---|
+| data root | `CPAS_DATA_ROOT` | `/home/Jingle/data/Project/CPAS` |
+| derived output root | `CPAS_OUT_ROOT` | `<data root>/pipeline/out` |
+| catalog and curated data | `cpas_data(...)` | `<data root>/data/...` |
+| manuscript/package-facing companions | `cpas_suppl(...)` | `<data root>/data/suppl/...` |
+
+Each script carries a short prologue that defines (or sources, when the source
+tree is present) `cpas_root()`, `cpas_out_root()`, `cpas_out(...)`,
+`cpas_data(...)` and `cpas_suppl(...)`, and is otherwise unchanged.  **With the
+default root every path resolves exactly where it resolved before**; exporting
+`CPAS_OUT_ROOT` redirects all derived output in one move.  The companions that
+the package or the manuscript read (`data/endpoint_semantics.csv`,
+`data/suppl/cohort_overlap.csv`, `data/suppl/platform_annotation_coverage.csv`)
+are written only by an explicit publish step, never as a side effect of a normal
+run.  The full per-file list is `pipeline/OUTPUT_LAYOUT.md` in the source tree.
+
 ## Layout
 
 The original pipeline was 67 standalone `pipeline/R/*.R` scripts that were run
@@ -99,8 +121,20 @@ run_07b_split_tnm()          # equivalent to: Rscript pipeline/R/07b_split_tnm.R
 ## Notes on the consolidation
 
 * Every function definition of the original 67 scripts is present with an
-  **identical deparsed body** (270 definitions, 0 altered), and the set of
-  original function names is a subset of the merged set.  The whole text of 66
+  **identical deparsed body**: **491 one-level function definitions, 0
+  altered**, and the set of original function names is a subset of the merged
+  set.  *Counting rule* (the one this figure was verified under): each of the 67
+  scripts is parsed and every `name <- function(...)` binding is counted whose
+  assignment statement sits at the top level of the file or one nesting level
+  inside it - that is, every binding a single `source()` of the script
+  materialises; a definition created only inside another function body is not
+  counted.  Parsing the nine consolidated files the same way (one
+  `run_<script>()` runner per script, 67 runners) and comparing the deparsed
+  function bodies reproduces 491 definitions with 0 differing.  The earlier text
+  claimed 270 deparsed bodies; that number does not reproduce under this rule or,
+  as far as we could determine, under any other (top-level definitions of the 67
+  scripts: 268; definitions at any depth including those inside function bodies:
+  513), so it is replaced by the verified figure above.  The whole text of 66
   of the 67 scripts appears byte-for-byte in the consolidated files.
 * Names that several scripts defined differently (`note`, `num`, `%||%`,
   `parseGSEMatrix`, ...) are no longer ambiguous: each embedded script keeps its
@@ -115,3 +149,13 @@ run_07b_split_tnm()          # equivalent to: Rscript pipeline/R/07b_split_tnm.R
   `96_build_suppl_expansion.R`.  Both copies are verbatim.
 * `data/`, the mirror, the catalog and the shipped TCGA tables are untouched by
   this directory.
+* The nine files are generated from `pipeline/R/**` by
+  `pipeline/REGENERATE_CONSOLIDATED.R` in the source tree; do not edit them by
+  hand.  The two pieces of file-level glue above live in the *header* of
+  `04_cohort_builds.R` / `05_clinical_and_scale.R`, which the regenerator keeps
+  verbatim, and the `[consolidated]` pointer comment inside
+  `run_07b_split_tnm()` is the only in-block edit and is re-applied after a
+  regeneration.
+* The pipeline **source tree is not shipped**: `pipeline/R/**` lives in the
+  repository only, so a step can be run from an installed package but the
+  generation/verification tooling cannot.

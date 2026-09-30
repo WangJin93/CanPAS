@@ -10,7 +10,8 @@ COX_screen_adjust(
   cont_Variates = NULL,
   cate_Variates = NULL,
   precision = 3,
-  p.threshold = 0.05
+  p.threshold = 0.05,
+  auto_repair = FALSE
 )
 }
 \arguments{
@@ -26,6 +27,12 @@ layout, including \code{type}).}
 \item{precision}{Decimal places for formatted values.}
 
 \item{p.threshold}{Significance threshold for entering the multivariate step.}
+
+\item{auto_repair}{Passed to \code{\link{COX_analysis}} for the multivariate
+step. \code{FALSE} (default) is the fail-safe: when the multivariate model
+is not estimable exactly as requested, it is refused with its reasons and
+offending terms (\code{multi_metadata$estimable} is \code{FALSE}) instead
+of being silently reduced. \code{TRUE} restores the automatic repair.}
 }
 \value{
 List with:

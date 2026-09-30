@@ -1,0 +1,322 @@
+---
+title: "Endpoints, pooling classes and shared-patient overlap"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Endpoints, pooling classes and shared-patient overlap}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6,
+                      fig.height = 4, warning = FALSE, message = FALSE)
+set.seed(20260930)
+```
+
+```{r}
+library(CanPAS)
+```
+
+## Why endpoints need a semantics layer
+
+Different cohorts call the same clinical question by different names. "How long
+until the disease comes back?" may be deposited as `DFS`, `RFS`, `EFS` or `DFI`;
+"how long until progression?" as `PFS` or the TCGA-derived `PFI`. CanPAS groups
+those tokens into five **pooling families** (`OS`, `DSS`, `DFS`, `PFS`, `MFS`),
+resolves the token each cohort actually provides, and records what that token
+means. Nothing is pooled across families.
+
+```{r}
+endpoint_family("RFS")     # a token -> its family
+endpoint_family("DRFS")
+endpoint_options("GSE31210")
+```
+
+The registry behind that is the **endpoint semantics table**: one row per cohort
+and family, with the token, the role of the token, what the deposit states about
+the event definition / time origin / censoring / competing events, the artefact
+the entry was read from, and - the column the analysis uses - the **pooling
+class**.
+
+```{r}
+es <- endpoint_semantics(family = "DFS")
+es[es$Accession %in% c("GSE31210", "GSE13507", "TCGA-LUAD"),
+   c("Accession", "Family", "Token", "TokenRole", "PoolingClass", "Evidence")]
+```
+
+```{r}
+table(endpoint_semantics()$PoolingClass)
+```
+
+The vocabulary is frozen and has five values:
+
+| class | meaning |
+|---|---|
+| `Exact-equivalent` | the token **is** the family's canonical definition (OS in OS, DFS in DFS, ...) |
+| `Clinically-related` | a different token pooled into the family by the documented rule (RFS/EFS/DFI in DFS, CSS/BCSS in DSS, PFI in PFS, DRFS in MFS) |
+| `Not-poolable` | the cohort reports an endpoint in this family that cannot be pooled |
+| `Unknown` | the deposit does not state what the endpoint means |
+| `Absent` | the cohort has no endpoint of this family at all - the absence of an endpoint, **not** a pooling verdict |
+
+```{r}
+endpoint_pooling_class("GSE31210", "DFS")        # RFS: related, not identical
+endpoint_pooling_class("GSE4922_GPL96", "DFS")   # DFS itself: exact
+endpoint_pooling_class("GSE13507", "DFS")        # no DFS endpoint at all -> Absent
+```
+
+`endpoint_pooling_class()` is one cell of `endpoint_semantics()`. If the
+companion table is not shipped in a build, both fall back to the package's
+documented token -> family map, which is the same rule the table records for the
+exact/related split; a family the catalog does not annotate still comes back as
+`Absent`.
+
+## Two pooling modes
+
+`cpas_meta()` has two modes and `"family"` is the documented default:
+
+* `pooling = "family"` (default) pools `Exact-equivalent` **and**
+  `Clinically-related` rows of one family. This is what makes a cross-token claim
+  possible at all: the DFS pool is 98 cohorts, of which only about 20 report a
+  token literally called DFS.
+* `pooling = "exact"` pools only `Exact-equivalent` rows. It is available for a
+  reviewer who wants the strictest reading, and it names every cohort it leaves
+  out.
+
+Both modes record the classes they pooled, per cohort and on the pooled row.
+
+```{r}
+mk_cohort <- function(n, prefix, seed, token = "OS", role = "primary") {
+  set.seed(seed)
+  x <- rnorm(n, 10, 1)
+  hr <- exp(0.4 * (x - 10))
+  d <- data.frame(ID = sprintf("%s%03d", prefix, seq_len(n)),
+                  OS_time = round(rexp(n, hr / 9) + 0.05, 3),
+                  OS_status = rbinom(n, 1, 0.65),
+                  GAPDH = x, TP53 = rnorm(n, 9, 1.1))
+  if (token != "OS") {
+    d[[paste0(token, "_time")]] <- d$OS_time
+    d[[paste0(token, "_status")]] <- d$OS_status
+  }
+  d
+}
+A <- mk_cohort(200, "A", 11)                 # reports OS
+B <- mk_cohort(180, "B", 12, token = "RFS")  # reports RFS (DFS family)
+C <- mk_cohort(150, "C", 13, token = "DFS")  # reports DFS
+merged <- list(A = A, B = B, C = C)
+```
+
+A table that marks B as related and C as exact, so the two modes differ:
+
+```{r}
+ct <- data.frame(
+  Accession = c("A", "B", "C"),
+  Family    = c("OS", "DFS", "DFS"),
+  Token     = c("OS", "RFS", "DFS"),
+  TokenRole = c("primary", "contributing", "primary"),
+  PoolingClass = c("Exact-equivalent", "Clinically-related", "Exact-equivalent"),
+  stringsAsFactors = FALSE)
+ct
+```
+
+```{r}
+strict <- cpas_meta(c("B", "C"), marker = "GAPDH", type = "DFS", merged = merged,
+                    pooling = "exact", class_table = ct)
+strict$per_dataset[, c("dataset", "endpoint", "pooling_class", "n", "HR")]
+strict$pooled[, c("pooling", "pooling_classes", "k", "HR", "lower", "upper")]
+```
+
+## The pooling method: DL, REML and HK
+
+`method` selects the estimator of the between-cohort variance tau^2 and the
+interval of the pooled estimate:
+
+* `"REML"` (the default since this version) - iterative restricted maximum
+  likelihood;
+* `"DL"` - DerSimonian-Laird, the estimator used before, kept for continuity
+  (`"RE"` is accepted as a synonym);
+* `"HK"` - the Hartung-Knapp-Sidik-Jonkman adjusted variance, on top of the REML
+  tau^2, with its characteristically wider interval;
+* `"FE"` - fixed effect.
+
+Both prediction intervals are always returned: the primary construction selected
+by `pi_method` and a clearly labelled alternative. `pi_method = "t"` (the
+default) is the documented t(k-2) interval, `"normal"` is the normal
+approximation and `"HK"` is the Hartung-Knapp-based interval; the rule actually
+used is recorded in `$pooled$pi_method` and `$pooled$pi_rule`.
+
+```{r}
+rows <- lapply(c("DL", "REML", "HK", "FE"), function(mm) {
+  p <- cpas_meta(c("A", "B", "C"), marker = "GAPDH", type = "OS", merged = merged,
+                 method = mm)$pooled
+  data.frame(method = mm, tau2 = p$tau2, HR = p$HR, lower = p$lower,
+             upper = p$upper, p = p$p, pi_primary_lo = p$pi_lower,
+             pi_alt_lo = p$pi_alt_lower)
+})
+do.call(rbind, rows)
+```
+
+Only the prediction interval changes with `pi_method`:
+
+```{r}
+pis <- lapply(c("t", "normal", "HK"), function(pm) {
+  p <- cpas_meta(c("A", "B", "C"), marker = "GAPDH", type = "OS", merged = merged,
+                 pi_method = pm)$pooled
+  data.frame(pi_method = p$pi_method, HR = p$HR, pi_lower = p$pi_lower,
+             pi_upper = p$pi_upper, pi_alt_lower = p$pi_alt_lower)
+})
+do.call(rbind, pis)
+```
+
+Leave-one-out sensitivity uses the same method as the original call:
+
+```{r}
+mt <- cpas_meta(c("A", "B", "C"), marker = "GAPDH", type = "OS", merged = merged)
+loo_meta(mt)[, c("left_out", "HR", "lower", "upper", "I2")]
+```
+
+## Shared-patient overlap
+
+Some cohort pairs share patients: one study split across two platforms, a series
+deposited twice, or the same patients re-published. Pooling both members counts
+those patients twice, which narrows the pooled interval without adding
+information. The register of known pairs ships with the package.
+
+```{r}
+ov <- cohort_overlap()
+dim(ov)
+head(ov[, c("AccessionA", "AccessionB", "SharedPatients", "Basis")], 4)
+```
+
+`cpas_meta(overlap = )` acts on the pairs that are inside the pool being built:
+
+* `"warn"` (default) proceeds, warns, and records the pairs in
+  `$pooled$overlap_pairs` and in the manifest;
+* `"refuse"` stops with an error naming the pair(s);
+* `"dedupe"` keeps one member of every overlapping group - the larger cohort,
+  ties broken by accession sort - and records what it dropped.
+
+```{r}
+ov_small <- data.frame(AccessionA = c("A", "B"), AccessionB = c("B", "C"),
+                       SharedPatients = c(40L, 12L), Basis = c("title", "platform-pair"),
+                       Evidence = c("identical titles", "same ids"),
+                       stringsAsFactors = FALSE)
+ov_small
+```
+
+```{r}
+w <- cpas_meta(c("A", "B", "C"), "GAPDH", "OS", merged = merged,
+               overlap_table = ov_small)
+w$pooled$overlap_pairs_text
+```
+
+```{r, error = TRUE}
+cpas_meta(c("A", "B", "C"), "GAPDH", "OS", merged = merged,
+          overlap = "refuse", overlap_table = ov_small)
+```
+
+```{r}
+dd <- cpas_meta(c("A", "B", "C"), "GAPDH", "OS", merged = merged,
+                overlap = "dedupe", overlap_table = ov_small)
+dd$per_dataset$dataset
+dd$excluded[, c("cohort", "stage", "reason")]
+```
+
+Deduplication is deterministic: the larger cohort wins, and a tie is broken by
+the accession sort, so the same pool always drops the same member.
+
+## The analysis manifest
+
+Everything above is recorded in one object per result, `$manifest`, also
+reachable through `cpas_manifest()`. It is printable and convertible.
+
+```{r}
+cpas_manifest(mt)
+```
+
+```{r}
+as.data.frame(cpas_manifest(dd))[c("field", "value")][
+  as.data.frame(cpas_manifest(dd))$field %in%
+    c("cohorts", "endpoint_family", "resolved_tokens_per_cohort",
+      "pooling_classes_pooled", "meta_method", "tau2", "I2", "pi_primary",
+      "pi_alt", "overlap_mode", "overlap_dropped"), ]
+```
+
+The structured parts stay data.frames inside the manifest, so they can be
+written to CSV or compared between runs:
+
+```{r}
+str(as.data.frame(cpas_manifest(mt)), max.level = 1)
+cpas_manifest(dd)$overlap_dropped
+cpas_manifest(strict)$pooling_table
+```
+
+## Fail-safe: a model that would need repair is refused
+
+The same principle applies inside a cohort. `auto_repair = FALSE` (the default)
+returns an explicit `not estimable` result instead of quietly dropping a
+covariate, merging a level or excluding patients; `auto_repair = TRUE` restores
+the repair and records every modification.
+
+```{r}
+A$flat <- 1
+bad <- COX_analysis(A, type = "OS", cont_Variates = c("GAPDH", "flat"),
+                    method = "multi")
+bad$status
+bad$offending_terms
+```
+
+```{r}
+ok <- COX_analysis(A, type = "OS", cont_Variates = c("GAPDH", "flat"),
+                   method = "multi", auto_repair = TRUE)
+ok$metadata$dropped_covariates[, c("variable", "reason")]
+cpas_manifest(ok)$dropped_covariates
+```
+
+## Checking the annotation itself: blinded adjudication
+
+The semantics table encodes *our* reading of each deposit, so it needs an
+audit that does not simply repeat it. `endpoint_adjudication()` draws a
+stratified sample (by endpoint family and by source) of cohort-endpoint records
+and returns a **blinded** rating sheet: the record id, the cohort, the token and
+the evidence text only - the family assignment, the pooling class and the four
+semantic fields are withheld - with one empty column per judgement field and
+rater.
+
+```{r}
+sheet <- endpoint_adjudication(n = 12, raters = 2, seed = 20260930)
+sheet[, c("record_id", "cohort", "token")]
+attr(sheet, "pooling_class_vocabulary")
+```
+
+The `record_id` is stable: it is assigned to the whole table before filtering
+and sampling, so a record keeps its id between draws. Once the raters have filled
+the sheet in, `endpoint_agreement()` reports the per-field raw agreement, Cohen's
+kappa with its Landis-and-Koch label, the overall pooled agreement, the
+adjudication rate and the disagreeing records. The example below uses a tiny
+synthesised ratings frame - **not a real study result** - whose kappa is known by
+hand: 20 records where both raters say `A`, 5 where only rater 1 says `A`, 10 the
+other way round and 15 where both say `B`, so `po = 0.70`,
+`pe = (25*30 + 25*20)/50^2 = 0.50` and `kappa = 0.40`.
+
+```{r}
+synth <- data.frame(
+  record_id = sprintf("REC%04d", 1:50),
+  cohort = "SYNTHETIC", token = "OS", evidence = "synthetic example",
+  rater1_pooling_class = c(rep("A", 25), rep("B", 25)),
+  rater2_pooling_class = c(rep("A", 20), rep("B", 5), rep("A", 10), rep("B", 15)))
+ag <- endpoint_agreement(synth, fields = "pooling_class")
+ag$per_field
+ag$overall_raw_agreement
+ag$adjudication_rate
+head(ag$disagreements[, c("record_id", "fields_disagreed")], 3)
+```
+
+With more than two raters the field's kappa is the mean of the pairwise Cohen's
+kappas, and the result says so.
+
+```{r}
+synth$rater3_pooling_class <- sample(c("A", "B"), 50, replace = TRUE)
+ag3 <- endpoint_agreement(synth, fields = "pooling_class")
+ag3$kappa_basis
+ag3$pairwise[, c("pair", "n_compared", "raw_agreement", "kappa")]
+```

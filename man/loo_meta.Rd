@@ -2,18 +2,22 @@
 % Please edit documentation in R/cpas_meta.R
 \name{loo_meta}
 \alias{loo_meta}
-\title{敏感性分析：Leave-one-out}
+\title{Sensitivity analysis: leave-one-out}
 \usage{
 loo_meta(x)
 }
 \arguments{
-\item{x}{一个 \code{cpas_meta} 对象。}
+\item{x}{An object of class \code{cpas_meta}.}
 }
 \value{
-数据框：\code{left_out} 为被剔除的队列，其余列为重新合并的汇总。
+data.frame: \code{left_out} names the cohort that was removed and the
+  remaining columns are the re-pooled summary for that omission, computed with
+  the same pooling method (\code{x$input$method}) as the original analysis.
 }
 \description{
-对每个队列逐一剔除后重新计算合并估计，评估单一队列对整体结果的影响。
+Refits the pooled estimate once per cohort, each time leaving one
+cohort out, so the influence of a single cohort on the overall result can be
+assessed.
 }
 \examples{
 \dontrun{

@@ -11,13 +11,27 @@
 #' gene the per-dataset estimates are pooled (inverse variance, random or fixed
 #' effects) instead of merely being listed, and the gene-level p-values are
 #' adjusted for multiple testing.
+#'
+#' \strong{Defaults follow \code{\link{cpas_meta}}.} The pooling method defaults
+#' to \code{"REML"} - the same default as \code{cpas_meta} (spec B10a: the panel
+#' previously defaulted to \code{"DL"}, which made two calls with the same
+#' arguments disagree; \code{"DL"} remains available explicitly, and passing
+#' \code{method = "DL"} reproduces the earlier panel tables exactly). The
+#' prediction-interval rule defaults to \code{pi_method = "t"}, matching
+#' \code{cpas_meta}.
 #' @param datasets Character vector of dataset accessions or TCGA projects.
 #' @param genes Character vector of gene symbols (the panel).
 #' @param type Endpoint family (OS/DSS/DFS/PFS/MFS) or a concrete token; the
 #'   family is resolved per dataset and the token used is reported in
 #'   \code{per_dataset$endpoint} and \code{endpoints}.
-#' @param method Pooling method for \code{\link{cpas_meta}}: \code{"RE"}
-#'   (random effects, DerSimonian-Laird, default) or \code{"FE"} (fixed effect).
+#' @param method Pooling method passed to \code{\link{cpas_meta}}:
+#'   \code{"REML"} (the default, matching \code{cpas_meta}), \code{"DL"},
+#'   \code{"HK"}, \code{"FE"}; \code{"RE"} is accepted as \code{"DL"}.
+#' @param pi_method Prediction-interval rule passed to \code{\link{cpas_meta}}:
+#'   \code{"t"} (default, \eqn{t_{k-2}}), \code{"normal"} or \code{"HK"}. The
+#'   rule used is recorded in \code{input$pi_method} and in the manifest; the
+#'   per-gene table carries the primary interval in \code{pi_lower}/\code{pi_upper}
+#'   and the clearly labelled alternative in \code{pi_alt_lower}/\code{pi_alt_upper}.
 #' @param confounders Optional covariates adjusted for inside every dataset.
 #' @param min_events Minimum number of events a dataset must contribute
 #'   (default 5); datasets below it are excluded with a recorded reason.
@@ -35,7 +49,7 @@
 #'     pooled), \code{datasets_used}, \code{total_n}, \code{total_events},
 #'     \code{HR}, \code{lower}, \code{upper}, \code{p}, \code{P_adj},
 #'     \code{P_adj_text}, \code{I2}, \code{tau2}, \code{pi_lower}, \code{pi_upper},
-#'     \code{p_heterogeneity}}
+#'     \code{pi_alt_lower}, \code{pi_alt_upper}, \code{p_heterogeneity}}
 #'   \item{\code{per_dataset}:}{long table: \code{gene}, \code{dataset},
 #'     \code{endpoint}, \code{n}, \code{events}, \code{HR}, \code{lower},
 #'     \code{upper}, \code{p}}
@@ -59,13 +73,20 @@
 #'                          type = "DFS")
 #'    p$table
 #'    plot_meta_panel(p)
+#'    ## the same panel with the earlier DerSimonian-Laird default, and with the
+#'    ## normal-approximation prediction interval
+#'    p_dl <- cpas_meta_panel(c("GSE31210", "GSE37745"), genes = "TP53",
+#'                            type = "DFS", method = "DL", pi_method = "normal")
+#'    p_dl$input$method; p_dl$input$pi_method
 #' }
 cpas_meta_panel <- function(datasets, genes, type = "OS",
-                            method = c("RE", "FE"),
+                            method = c("REML", "DL", "HK", "FE", "RE"),
+                            pi_method = c("t", "normal", "HK"),
                             confounders = NULL, min_events = 5,
                             process_duplicates = "max", fdr_method = "BH",
                             merged = NULL, max_try = 3, progress = TRUE) {
   method <- match.arg(method)
+  pi_method <- .cpas_pi_method(pi_method)
   if (missing(datasets) || !length(datasets))
     stop("'datasets' must contain at least one accession.")
   datasets <- unique(as.character(datasets))
@@ -117,7 +138,8 @@ cpas_meta_panel <- function(datasets, genes, type = "OS",
     withCallingHandlers(
       res <- tryCatch(
         cpas_meta(datasets = names(merged), marker = g, type = type,
-                  method = method, confounders = confounders,
+                  method = method, pi_method = pi_method,
+                  confounders = confounders,
                   min_events = min_events, merged = merged,
                   max_try = max_try),
         error = function(e) e),
@@ -143,6 +165,7 @@ cpas_meta_panel <- function(datasets, genes, type = "OS",
       HR = po$HR, lower = po$lower, upper = po$upper, p = po$p,
       I2 = po$I2, tau2 = po$tau2,
       pi_lower = po$pi_lower, pi_upper = po$pi_upper,
+      pi_alt_lower = po$pi_alt_lower, pi_alt_upper = po$pi_alt_upper,
       p_heterogeneity = po$p_heterogeneity, stringsAsFactors = FALSE)
     long[[length(long) + 1L]] <- cbind(
       gene = g,
@@ -168,7 +191,8 @@ cpas_meta_panel <- function(datasets, genes, type = "OS",
   rownames(tbl) <- NULL
 
   out <- list(input = list(datasets = datasets, genes = genes, type = type,
-                           method = method, confounders = confounders,
+                           method = method, pi_method = pi_method,
+                           confounders = confounders,
                            min_events = min_events,
                            process_duplicates = process_duplicates,
                            fdr_method = fdr_method, time = Sys.time()),
@@ -185,7 +209,37 @@ cpas_meta_panel <- function(datasets, genes, type = "OS",
                               genes_single_dataset = sum(tbl$k == 1L, na.rm = TRUE),
                               genes_failed = sum(tbl$k == 0L, na.rm = TRUE),
                               n_significant_fdr005 =
-                                sum(tbl$P_adj < 0.05, na.rm = TRUE)))
+                                sum(tbl$P_adj < 0.05, na.rm = TRUE)),
+              manifest = .cpas_manifest_new(
+                analysis = "cpas_meta_panel",
+                cohorts = names(merged),
+                family = endpoint_family(type),
+                token = as.character(type)[1],
+                selection_rule = sprintf(paste0("the %d supplied dataset(s) were retrieved once and pooled ",
+                                                "per gene for family '%s'; %d gene(s) pooled, %d single-dataset, ",
+                                                "%d failed"),
+                                         length(datasets), type,
+                                         sum(tbl$k >= 2L, na.rm = TRUE),
+                                         sum(tbl$k == 1L, na.rm = TRUE),
+                                         sum(tbl$k == 0L, na.rm = TRUE)),
+                dropped_rows = if (length(fetch_errors)) data.frame(
+                  cohort = names(fetch_errors), n_dropped = NA_integer_,
+                  reason = unlist(fetch_errors), stringsAsFactors = FALSE) else NULL,
+                cut_rule = "not applicable (meta-analysis of a continuous marker; no cut-point is searched)",
+                meta_method = method,
+                auto_repair = FALSE,
+                pi_method = pi_method,
+                tau2 = stats::median(tbl$tau2, na.rm = TRUE),
+                I2 = stats::median(tbl$I2, na.rm = TRUE),
+                pi_primary = c(lower = stats::median(tbl$pi_lower, na.rm = TRUE),
+                               upper = stats::median(tbl$pi_upper, na.rm = TRUE)),
+                pi_primary_rule = paste0(.cpas_pi_rule_text(pi_method)$primary, ", per gene"),
+                pi_alt = c(lower = stats::median(tbl$pi_alt_lower, na.rm = TRUE),
+                           upper = stats::median(tbl$pi_alt_upper, na.rm = TRUE)),
+                pi_alt_rule = paste0(.cpas_pi_rule_text(pi_method)$alt, ", per gene"),
+                notes = c(sprintf("gene-level p-values were adjusted for multiplicity with %s (BH by default); single-dataset rows are not adjusted",
+                                  fdr_method),
+                          if (length(notes)) sprintf("%d gene(s) raised warnings", length(notes)) else NULL)))
   class(out) <- "cpas_meta_panel"
   out
 }

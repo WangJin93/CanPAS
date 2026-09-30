@@ -30,10 +30,36 @@
 # ---------------------------------------------------------------------------
 run_batch_integrate <- function() {
 # batch_integrate.R — 步骤1(签名/多基因) + 步骤2(分癌种整合) + 步骤3(多因素/LOO/Stouffer/方向一致性) + 整合KM
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({library(CanPAS); library(survival); library(ggplot2); library(RMySQL); library(dplyr)})
 ROOT <- "~/data/Project/CanPAS"; ROOT <- path.expand(ROOT)
-OUT <- file.path(ROOT, "pipeline/out")
-dataset_info <- read.csv(file.path(ROOT, "data/dataset_info.csv"), stringsAsFactors=FALSE)
+OUT <- cpas_out_root()
+dataset_info <- read.csv(file.path(ROOT, cpas_data("dataset_info.csv")), stringsAsFactors=FALSE)
 con <- dbConnect(MySQL(), host="139.224.80.159", dbname="cpas", user = Sys.getenv("CPAS_DB_USER", unset = "CPAS"), password = Sys.getenv("CPAS_DB_PASSWORD"))
 tabs <- dbListTables(con)
 surv_db <- sub("_surv$", "", tabs[grepl("_surv$", tabs)])
@@ -161,9 +187,35 @@ cat("\nALL DONE\n")
 # ---------------------------------------------------------------------------
 run_batch_integrate2 <- function() {
 # batch_integrate2.R — 补跑：正确癌种名的 gastric/ovarian/bladder + MM 重试 + KM 计数确认
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({library(CanPAS); library(survival); library(ggplot2); library(RMySQL); library(dplyr)})
-ROOT <- "~/data/Project/CanPAS"; ROOT <- path.expand(ROOT); OUT <- file.path(ROOT,"pipeline/out")
-dataset_info <- read.csv(file.path(ROOT,"data/dataset_info.csv"), stringsAsFactors=FALSE)
+ROOT <- "~/data/Project/CanPAS"; ROOT <- path.expand(ROOT); OUT <- cpas_out_root()
+dataset_info <- read.csv(file.path(ROOT,cpas_data("dataset_info.csv")), stringsAsFactors=FALSE)
 con <- dbConnect(MySQL(), host="139.224.80.159", dbname="cpas", user = Sys.getenv("CPAS_DB_USER", unset = "CPAS"), password = Sys.getenv("CPAS_DB_PASSWORD"))
 tabs <- dbListTables(con); surv_db <- sub("_surv$","",tabs[grepl("_surv$",tabs)])
 expr_db <- setdiff(tabs[grepl("^GSE",tabs)], paste0(surv_db,"_surv")); dbDisconnect(con)
@@ -205,9 +257,35 @@ cat("DONE2\n")
 # ---------------------------------------------------------------------------
 run_demo_meta_lung <- function() {
 # demo_meta_lung.R — 肺癌 OS 多队列整合分析演示（两阶段 meta）
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({library(CanPAS); library(survival); library(ggplot2); library(RMySQL); library(dplyr)})
 ROOT <- "~/data/Project/CanPAS"; ROOT <- path.expand(ROOT)
-dataset_info <- read.csv(file.path(ROOT, "data/dataset_info.csv"), stringsAsFactors=FALSE)
+dataset_info <- read.csv(file.path(ROOT, cpas_data("dataset_info.csv")), stringsAsFactors=FALSE)
 con <- dbConnect(MySQL(), host="139.224.80.159", dbname="cpas", user = Sys.getenv("CPAS_DB_USER", unset = "CPAS"), password = Sys.getenv("CPAS_DB_PASSWORD"))
 tabs <- dbListTables(con)
 surv_db <- sub("_surv$", "", tabs[grepl("_surv$", tabs)])
@@ -224,9 +302,9 @@ cat("\n==== pooled (RE) ====\n"); print(res$pooled, row.names=FALSE)
 cat("\n==== per cohort ====\n"); print(res$per_cohort[, c("table","n","events","HR","lower","upper","p")], row.names=FALSE)
 cat("\ncohort errors (skipped):\n"); print(res$errors)
 
-write.csv(res$per_cohort, file.path(ROOT,"pipeline/out","meta_lung_per_cohort.csv"), row.names=FALSE)
-write.csv(res$pooled,  file.path(ROOT,"pipeline/out","meta_lung_pooled.csv"),  row.names=FALSE)
-png(file.path(ROOT,"pipeline/out","meta_lung_forest_GAPDH.png"), width=1600, height=1500, res=150)
+write.csv(res$per_cohort, cpas_out("meta_lung_per_cohort.csv"), row.names=FALSE)
+write.csv(res$pooled,  cpas_out("meta_lung_pooled.csv"),  row.names=FALSE)
+png(cpas_out("meta_lung_forest_GAPDH.png"), width=1600, height=1500, res=150)
 print(plot_meta_forest(res)); dev.off()
 cat("saved: meta_lung_per_cohort.csv / meta_lung_pooled.csv / meta_lung_forest_GAPDH.png\n")
 }
@@ -235,6 +313,32 @@ cat("saved: meta_lung_per_cohort.csv / meta_lung_pooled.csv / meta_lung_forest_G
 # run_demo_tcga_integration()  <-  verbatim pipeline/R/demo_tcga_integration.R
 # ---------------------------------------------------------------------------
 run_demo_tcga_integration <- function() {
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({library(CanPAS); library(survival); library(dplyr)})
 # 1) 保留癌种清单 + 每项目样本/OS 概况（离线 tcga_surv.rda）
 rows <- lapply(names(CanPAS::tcga_retained), function(proj){
@@ -246,7 +350,7 @@ rows <- lapply(names(CanPAS::tcga_retained), function(proj){
              has_OS=("OS_status" %in% colnames(st)), has_DFI=("DFI_status" %in% colnames(st)))
 })
 cat <- do.call(rbind, rows)
-write.csv(cat, "pipeline/out/tcga_catalog.csv", row.names=FALSE)
+write.csv(cat, cpas_out("tcga_catalog.csv"), row.names=FALSE)
 print(cat, row.names=FALSE)
 # 2) 端到端：LUAD 与 BRCA 用 tcga_merged -> 直接进 CanPAS COX 与 meta
 d1 <- tcga_merged("LUAD", c("TP53","GAPDH"), "OS")
@@ -328,6 +432,32 @@ run_test_cpas_dataset <- function() {
 # test_cpas_dataset.R — 本地 CanPAS 端到端测试（任意已上传数据集）
 # 用法: Rscript pipeline/R/test_cpas_dataset.R <ACC> <genes,comma> <type> <marker> [<ProjectRoot>] [<predict.time>]
 # 例  : Rscript pipeline/R/test_cpas_dataset.R GSE39582 TP53,GAPDH,ACTB OS TP53 ~/data/Project/CanPAS 3
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({
   library(CanPAS); library(survival); library(survminer)
   library(ggplot2); library(dplyr)
@@ -339,10 +469,10 @@ TYPE <- args[3]; MARKER <- args[4]
 ROOT <- if (length(args) >= 5) args[5] else "~/data/Project/CanPAS"
 PT   <- if (length(args) >= 6) as.numeric(args[6]) else 3
 ROOT <- path.expand(ROOT)
-OUT  <- file.path(ROOT, "pipeline/out"); dir.create(OUT, showWarnings=FALSE)
+OUT  <- cpas_out_root(); dir.create(OUT, showWarnings=FALSE)
 data(ID_map)
-if (file.exists(file.path(ROOT, "data/dataset_info.csv"))) {
-  dataset_info <- read.csv(file.path(ROOT, "data/dataset_info.csv"),
+if (file.exists(file.path(ROOT, cpas_data("dataset_info.csv")))) {
+  dataset_info <- read.csv(file.path(ROOT, cpas_data("dataset_info.csv")),
                            stringsAsFactors=FALSE)   # 始终用最新登记表
 } else data(dataset_info)
 cat("== dataset_info rows:", nrow(dataset_info), "|", ACC, "registered:",
@@ -388,6 +518,32 @@ run_test_cpas_GSE44001 <- function() {
 # 流程: get_expr_data(基因->平台探针) -> merge_surv_expr(与 GSE44001_surv 合并)
 #       -> COX_analysis / plot_km / plot_roc (type="DFS")
 # 用法: Rscript pipeline/R/test_cpas_GSE44001.R [<ProjectRoot>]
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({
   library(CanPAS); library(survival); library(survminer)
   library(ggplot2); library(dplyr)
@@ -395,7 +551,7 @@ suppressMessages({
 ROOT <- if (length(commandArgs(trailingOnly=TRUE)) >= 1)
   commandArgs(trailingOnly=TRUE)[1] else "~/data/Project/CanPAS"
 ROOT <- path.expand(ROOT)
-OUT  <- file.path(ROOT, "pipeline/out"); dir.create(OUT, showWarnings=FALSE)
+OUT  <- cpas_out_root(); dir.create(OUT, showWarnings=FALSE)
 
 data(ID_map)
 data(dataset_info)
@@ -450,12 +606,38 @@ run_validate_cpas <- function() {
 # validate_cpas.R — 用 CanPAS 包批量验证每个入库数据集：取表达→合并生存→单因素COX
 # 用法: Rscript pipeline/R/validate_cpas.R [<ProjectRoot>]
 # 输出: pipeline/out/CPAS_validation_<date>.csv  （逐数据集 PASS/FAIL + 诊断）
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({library(CanPAS); library(survival); library(dplyr); library(RMySQL)})
 
 ROOT <- if (length(commandArgs(trailingOnly=TRUE)) >= 1) commandArgs(trailingOnly=TRUE)[1] else "~/data/Project/CanPAS"
 ROOT <- path.expand(ROOT); setwd(ROOT)
 data(ID_map)
-dataset_info <- read.csv("data/dataset_info.csv", stringsAsFactors=FALSE)   # 最新登记（Accession 与 DB 表名一致）
+dataset_info <- read.csv(cpas_data("dataset_info.csv"), stringsAsFactors=FALSE)   # 最新登记（Accession 与 DB 表名一致）
 
 con <- dbConnect(MySQL(), host="139.224.80.159", dbname="cpas", user = Sys.getenv("CPAS_DB_USER", unset = "CPAS"), password = Sys.getenv("CPAS_DB_PASSWORD"))
 tabs <- dbListTables(con)
@@ -546,7 +728,7 @@ run_retry <- function(acc) {
   r
 }
 res <- do.call(rbind, lapply(targets, run_retry))
-outf <- file.path(ROOT, "pipeline/out", paste0("CPAS_validation_", format(Sys.Date(), "%Y%m%d"), ".csv"))
+outf <- cpas_out(paste0("CPAS_validation_", format(Sys.Date(), "%Y%m%d"), ".csv"))
 write.csv(res, outf, row.names=FALSE)
 cat("\n==== summary ====\n")
 print(table(res$status, res$type, useNA="ifany"))

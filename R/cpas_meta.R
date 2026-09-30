@@ -1,43 +1,148 @@
-#' 两阶段跨队列整合（meta）分析
+#' @title Two-stage cross-cohort integrative (meta) analysis
 #' @description
-#' 对同一癌种的多个队列执行两阶段整合分析：
-#'   阶段1 每队列 coxph(Surv(time,status) ~ marker) 得到 logHR ± SE；
-#'   阶段2 逆方差加权合并（固定 FE / 随机 RE: DerSimonian-Laird），
-#'         输出合并 HR(95%CI)、Z/p、异质性 Q/df/I²/tau²。
-#' @param datasets 字符向量：数据集 accession（与 dataset_info 的 Accession 一致）。
-#' @param marker 单基因符号（如 "TP53"）或签名公式字符串（如 "0.5*TP53+0.3*GAPDH"）。
-#' @param type 终点家族 (OS/DSS/DFS/PFS/MFS) 或原始终点 token (OS/DSS/DFS/RFS/PFS/MFS/DFI/PFI/DRFS/EFS…)。
-#'   家族会按队列解析为具体 token (见 \code{\link{endpoint_resolve}}), 并在 per_dataset$endpoint 中记录。
-#' @param method "RE"（随机效应，默认）或 "FE"（固定效应）。
-#' @param confounders 可选：多因素校正协变量名向量（须存在于 merged 数据，按队列可用集合取交集）。
-#' @param min_events 队列纳入最低事件数（默认 5）。
-#' @param max_try 每个队列取数失败时的重试次数（应对 API 抖动）。
-#' @param merged 可选：命名列表（队列名 -> 已 merge 好的数据框）。提供后不再联网取数。
-
-#' @return class "cpas_meta" 列表：per_dataset、pooled、input、errors。
+#' Runs a two-stage integrative analysis over several cohorts of one cancer type:
+#'   stage 1 fits \code{coxph(Surv(time, status) ~ marker + confounders)} in every
+#'   cohort, giving log-HR +/- SE per cohort; stage 2 pools them by inverse
+#'   variance and reports the pooled HR (95\% CI), Z/p, the heterogeneity
+#'   statistics Q/df/I\eqn{^2}/tau\eqn{^2} and two prediction intervals.
+#'
+#' The pooling method is chosen by \code{method}: \code{"REML"} (default,
+#' iterative restricted maximum likelihood for tau\eqn{^2}), \code{"DL"}
+#' (DerSimonian-Laird, the previous default, kept for continuity), \code{"HK"}
+#' (Hartung-Knapp-Sidik-Jonkman adjusted variance of the pooled estimate, with
+#' its characteristic wider interval) or \code{"FE"} (fixed effect).
+#' \code{"RE"} is still accepted as a synonym of \code{"DL"}.
+#' @param datasets Character vector of dataset accessions (matching
+#'   \code{dataset_info$Accession}).
+#' @param marker One gene symbol (e.g. \code{"TP53"}) or a signature formula
+#'   string (e.g. \code{"0.5*TP53+0.3*GAPDH"}).
+#' @param type Endpoint family (OS/DSS/DFS/PFS/MFS) or a raw endpoint token
+#'   (OS/DSS/DFS/RFS/PFS/MFS/DFI/PFI/DRFS/EFS, ...). A family is resolved per
+#'   cohort to the concrete token that cohort provides (see
+#'   \code{\link{endpoint_resolve}}) and recorded in \code{per_dataset$endpoint}
+#'   and in \code{per_dataset$pooling_class}.
+#' @param method Pooling method: \code{"REML"} (default), \code{"DL"},
+#'   \code{"HK"} or \code{"FE"}; \code{"RE"} is accepted as \code{"DL"}.
+#' @param pi_method Construction rule of the 95\% prediction interval for a new
+#'   cohort (spec B6): \code{"t"} (default) is the documented
+#'   \eqn{\hat\mu \pm t_{0.975,k-2}\sqrt{se_{pooled}^2+\tau^2}} interval
+#'   (needs at least 3 cohorts); \code{"normal"} is the normal approximation
+#'   \eqn{\hat\mu \pm 1.96\sqrt{se_{pooled}^2+\tau^2}} (needs at least 2);
+#'   \code{"HK"} uses the Hartung-Knapp-Sidik-Jonkman adjusted standard error of
+#'   the pooled estimate with \eqn{t_{0.975,k-1}} (needs at least 2). The rule
+#'   actually used is recorded in \code{$pooled$pi_method} and
+#'   \code{$pooled$pi_rule}, and the other construction is returned beside it,
+#'   clearly labelled, in \code{$pooled$pi_alt_lower}/\code{pi_alt_upper} with
+#'   \code{$pooled$pi_alt_rule}. Only the prediction interval is affected:
+#'   \code{pi_method} does not change the pooled HR, its confidence interval, or
+#'   any heterogeneity statistic.
+#' @param confounders Optional character vector of covariate names to adjust for
+#'   (they must exist in the merged data; the covariates available in each
+#'   cohort are intersected). With the default \code{auto_repair = FALSE} a
+#'   cohort in which a requested covariate is constant is reported as
+#'   \code{not estimable} instead of being adjusted for a reduced covariate set.
+#' @param min_events Minimum number of events for a cohort to enter (default 5).
+#' @param max_try Retries per cohort when fetching fails (API jitter).
+#' @param merged Optional named list (cohort name -> already merged data.frame).
+#'   When supplied nothing is fetched from the network.
+#' @param pooling \code{"family"} (default) pools the Exact-equivalent and the
+#'   Clinically-related rows of the endpoint family, i.e. the cohorts that
+#'   contribute RFS/EFS/DFI to DFS, CSS/BCSS to DSS, PFI to PFS and DRFS to MFS
+#'   as well as those whose token is the family itself. \code{"exact"} pools only
+#'   rows whose pooling class is \code{Exact-equivalent}. Both modes are
+#'   available because \code{"family"} is what makes the cross-token claim
+#'   (the DFS pool would fall from 98 cohorts to the ~20 whose token is
+#'   literally DFS); the mode actually used is recorded in
+#'   \code{$pooled$pooling}, in \code{$per_dataset$pooling_class} and in
+#'   \code{$manifest}.
+#' @param overlap What to do about cohort pairs known to share patients:
+#'   \code{"warn"} (default) proceeds but warns and records the pairs in
+#'   \code{$pooled$overlap_pairs}, \code{"refuse"} stops with an actionable
+#'   error, \code{"dedupe"} keeps one member of each overlapping group (the
+#'   larger cohort, ties by accession sort) and records what it dropped in
+#'   \code{$excluded} and \code{$manifest$overlap_dropped}.
+#' @param auto_repair \code{FALSE} (default) is the fail-safe: a cohort whose
+#'   model would need covariates dropped, levels merged or rows excluded is
+#'   reported as \code{not estimable} with its reasons and offending terms in
+#'   \code{$excluded}, and no model is returned for it. \code{TRUE} restores the
+#'   previous behaviour (repair the model) and records every modification in
+#'   \code{$modifications}.
+#' @param class_table Optional endpoint-semantics table (the frozen schema of
+#'   \code{\link{endpoint_semantics}}) used instead of the shipped copy.
+#' @param overlap_table Optional shared-patient register (the frozen schema of
+#'   \code{\link{cohort_overlap}}) used instead of the shipped copy.
+#' @return A list of class \code{cpas_meta}:
+#'   \item{\code{per_dataset}:}{one row per pooled cohort with \code{dataset},
+#'     \code{endpoint} (the token used), \code{pooling_class}, \code{n},
+#'     \code{events}, \code{HR}, \code{lower}, \code{upper}, \code{logHR},
+#'     \code{se}, \code{p}}
+#'   \item{\code{pooled}:}{one row: the method used, \code{pi_method} (the
+#'     prediction-interval rule used), \code{k}, \code{HR},
+#'     \code{lower}, \code{upper}, \code{p}, \code{Q}, \code{df},
+#'     \code{p_heterogeneity}, \code{I2}, \code{tau2}, the primary prediction
+#'     interval \code{pi_lower}/\code{pi_upper} (by default t with k-2 df) and
+#'     the alternative interval \code{pi_alt_lower}/\code{pi_alt_upper} (by
+#'     default the normal approximation), plus \code{pooling},
+#'     \code{pooling_classes}, \code{overlap_pairs} and \code{overlap_mode}}
+#'   \item{\code{excluded}:}{cohorts that did not enter and why
+#'     (\code{cohort}, \code{stage}, \code{reason}); \code{stage = "model"} rows
+#'     are the fail-safe refusals}
+#'   \item{\code{modifications}:}{every modification \code{auto_repair = TRUE}
+#'     made (\code{cohort}, \code{variable}, \code{detail}, \code{reason})}
+#'   \item{\code{errors}, \code{input}, \code{manifest}:}{fetch/endpoint errors
+#'     per cohort, the echoed inputs, and the analysis manifest
+#'     (\code{\link{cpas_manifest}})}
 #' @examples
 #' \dontrun{
 #'    ## Real cohorts, real endpoint: each cohort contributes the DFS-family
 #'    ## token it actually has, which the function resolves and reports.
 #'    m <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS")
-#'    m$per_dataset[, c("dataset", "endpoint", "n", "events", "HR")]
+#'    m$per_dataset[, c("dataset", "endpoint", "pooling_class", "n", "events", "HR")]
 #'    m$pooled
 #'    plot_meta_forest(m)
-#'    loo_meta(m)          # leave-one-out sensitivity
+#'    loo_meta(m)               # leave-one-out sensitivity
+#'    cpas_manifest(m)          # what was pooled, and under which defaults
 #'    print(m)
+#'
+#'    ## Strict mode: only cohorts whose token IS the family definition.
+#'    m2 <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS",
+#'                    pooling = "exact")
+#'    m2$per_dataset$pooling_class
+#'
+#'    ## Prediction-interval rule (spec B6): the default t(k-2) interval, the
+#'    ## normal approximation, or the HK-based interval. The interval used is
+#'    ## recorded in $pooled$pi_method.
+#'    m_normal <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53",
+#'                          type = "DFS", pi_method = "normal")
+#'    m_normal$pooled[, c("pi_method", "pi_lower", "pi_upper", "pi_alt_lower")]
 #' }
+#' @seealso \code{\link{endpoint_semantics}}, \code{\link{cohort_overlap}},
+#'   \code{\link{cpas_manifest}}
 #' @export
 cpas_meta <- function(datasets, marker, type = "OS",
-                      method = c("RE", "FE"),
+                      method = c("REML", "DL", "HK", "FE"),
+                      pi_method = c("t", "normal", "HK"),
                       confounders = NULL,
                       min_events = 5,
                       max_try = 3,
-                      merged = NULL) {
-  method <- match.arg(method)
+                      merged = NULL,
+                      pooling = c("family", "exact"),
+                      overlap = c("warn", "refuse", "dedupe"),
+                      auto_repair = FALSE,
+                      class_table = NULL,
+                      overlap_table = NULL) {
+  method_req <- as.character(method)[1]
+  method <- .cpas_meta_method(method_req)
+  pi_method <- .cpas_pi_method(pi_method)
+  pooling <- match.arg(pooling)
+  overlap <- match.arg(overlap)
+  if (!is.logical(auto_repair) || length(auto_repair) != 1L || is.na(auto_repair))
+    stop("'auto_repair' must be TRUE or FALSE.", call. = FALSE)
   if (missing(datasets) || is.null(datasets))
     stop("'datasets' must contain at least one accession.", call. = FALSE)
   datasets <- as.character(datasets)
   if (!length(datasets)) stop("'datasets' must contain at least one accession.", call. = FALSE)
+  datasets_req <- datasets
   genes <- if (grepl("[+*:]", marker)) {
     unique(unlist(regmatches(marker, gregexpr("[A-Za-z][A-Za-z0-9._]*", marker))))
   } else marker
@@ -50,7 +155,72 @@ cpas_meta <- function(datasets, marker, type = "OS",
     stop("'merged' contains duplicated names: ",
          paste(unique(names(merged)[duplicated(names(merged))]), collapse = ", "),
          ". Use unique dataset names.", call. = FALSE)
-  per <- list(); errors <- list()
+
+  family <- endpoint_family(type)
+  if (is.na(family)) family <- as.character(type)[1]
+
+  # ---- shared-patient overlap --------------------------------------------
+  ov_tab <- overlap_table
+  if (is.null(ov_tab))
+    ov_tab <- tryCatch(cohort_overlap(), error = function(e) NULL)
+  ov_source <- if (is.null(ov_tab)) "unavailable (companion table not shipped)" else
+    "inst/extdata/cohort_overlap.csv"
+  ov_in <- .cpas_overlap_pairs_in(datasets, table = ov_tab)
+  ov_pairs <- ov_in$table
+  ov_drop <- .cpas_empty_df(c("cohort", "kept", "shared_patients", "group", "reason"))
+  excluded <- .cpas_empty_df(c("cohort", "stage", "reason"))
+  add_excluded <- function(cohort, stage, reason) {
+    excluded[nrow(excluded) + 1L, ] <<- list(as.character(cohort), as.character(stage),
+                                             as.character(reason))
+  }
+  if (!is.null(ov_pairs) && nrow(ov_pairs)) {
+    if (overlap == "refuse")
+      stop("Refusing to pool cohorts that share patients (overlap = \"refuse\"): ",
+           paste(sprintf("%s / %s share %s patients", ov_pairs$AccessionA,
+                         ov_pairs$AccessionB, ov_pairs$SharedPatients),
+                 collapse = "; "),
+           ". Drop one member of each pair, or use overlap = \"dedupe\" to let ",
+           "the function keep the larger cohort of every overlapping group.",
+           call. = FALSE)
+    if (overlap == "warn")
+      warning("Cohorts sharing patients are being pooled (overlap = \"warn\"): ",
+              paste(sprintf("%s / %s (%s shared)", ov_pairs$AccessionA,
+                            ov_pairs$AccessionB, ov_pairs$SharedPatients),
+                    collapse = "; "),
+              ". Their patients are counted twice, which narrows the pooled ",
+              "interval without adding information; use overlap = \"dedupe\" to ",
+              "keep one member of each group, or overlap = \"refuse\" to stop.",
+              call. = FALSE)
+  } else if (is.null(ov_tab) && overlap != "warn") {
+    stop("overlap = \"", overlap, "\" needs the shared-patient register, but ",
+         "it is not shipped with this build (inst/extdata/cohort_overlap.csv ",
+         "is missing; it is produced by the curation pipeline). Pass the pairs ",
+         "through overlap_table=, or use overlap = \"warn\" to proceed without ",
+         "the check.", call. = FALSE)
+  }
+  if (overlap == "dedupe" && !is.null(ov_pairs) && nrow(ov_pairs)) {
+    n_of <- list()
+    di <- .cpas_dataset_info()
+    for (t in datasets) {
+      n <- NA_real_
+      if (t %in% di$Accession) {
+        v <- suppressWarnings(as.numeric(di$N[match(t, di$Accession)]))
+        if (length(v) && is.finite(v)) n <- v
+      }
+      if (!is.finite(n) && !is.null(merged[[t]])) n <- nrow(merged[[t]])
+      n_of[[t]] <- n
+    }
+    dd <- .cpas_overlap_dedupe(datasets, ov_pairs, n_of)
+    ov_drop <- dd$dropped
+    for (i in seq_len(nrow(ov_drop)))
+      add_excluded(ov_drop$cohort[i], "overlap", ov_drop$reason[i])
+    datasets <- dd$keep
+    ov_in <- .cpas_overlap_pairs_in(datasets, table = ov_tab)
+    ov_pairs <- ov_in$table
+  }
+
+  per <- list(); errors <- list(); mods <- list(); rows_dropped <- list()
+  ph_list <- list(); lookup <- list()
   for (t in datasets) {
     r <- NULL
     if (!is.null(merged) && !is.null(merged[[t]])) {
@@ -73,21 +243,42 @@ cpas_meta <- function(datasets, marker, type = "OS",
           err <- r; Sys.sleep(2 + 1.5 * i)
         }
       }
-      if (!ok) { errors[[t]] <- paste0("fetch/merge: ", substr(err$message, 1, 100)); next }
+      if (!ok) {
+        errors[[t]] <- paste0("fetch/merge: ", substr(err$message, 1, 100))
+        add_excluded(t, "fetch", errors[[t]])
+        next
+      }
       df <- r$df
     }
-    # 家族 (OS/DSS/DFS/PFS/MFS) -> 该队列可用的具体终点; 也兼容原始 token
+    # family (OS/DSS/DFS/PFS/MFS) -> the concrete endpoint this cohort has; a
+    # raw token is also accepted
     tok <- endpoint_resolve(t, type)
     if (is.na(tok)) {
-      # 回退: 队列不在 catalog 中(如用户自备数据), 若数据本身含该终点列则按原始 token 处理
+      # fallback: a cohort outside the catalog (user-supplied data) whose data
+      # already carry the endpoint columns is handled under the raw token
       if (all(c(paste0(type, "_time"), paste0(type, "_status")) %in% colnames(df)))
         tok <- as.character(type)[1]
-      else { errors[[t]] <- paste0("no ", type, " endpoint"); next }
+      else {
+        errors[[t]] <- paste0("no ", type, " endpoint")
+        add_excluded(t, "endpoint", errors[[t]])
+        next
+      }
     }
     tc <- paste0(tok, "_time"); sc <- paste0(tok, "_status")
     if (!all(c(tc, sc) %in% colnames(df))) {
       errors[[t]] <- paste0("no ", type, " endpoint (resolved ", tok,
-                            " not in merged data)"); next
+                            " not in merged data)")
+      add_excluded(t, "endpoint", errors[[t]])
+      next
+    }
+    cls <- .cpas_pooling_lookup(t, family, table = class_table, tokens = tok)
+    cls$family <- family
+    lookup[[t]] <- cls
+    if (identical(pooling, "exact") && !identical(cls$pooling_class, "Exact-equivalent")) {
+      add_excluded(t, "pooling",
+                   sprintf("pooling = \"exact\" keeps only Exact-equivalent rows; this cohort's token is %s (%s in family %s)",
+                           tok, cls$pooling_class, family))
+      next
     }
     df[[tc]] <- suppressWarnings(as.numeric(df[[tc]]))
     df[[sc]] <- suppressWarnings(as.numeric(df[[sc]]))
@@ -98,27 +289,54 @@ cpas_meta <- function(datasets, marker, type = "OS",
       missing_sig <- setdiff(genes, colnames(df))
       if (!length(gv)) {
         errors[[t]] <- paste0("signature genes absent: ",
-                              paste(missing_sig, collapse = ",")); next
+                              paste(missing_sig, collapse = ","))
+        add_excluded(t, "marker", errors[[t]])
+        next
       }
       score <- tryCatch(eval(parse(text = marker), envir = as.list(df[gv])),
                         error = function(e) NULL)
       if (is.null(score) || all(is.na(score))) {
         errors[[t]] <- paste0("signature eval failed (missing on platform: ",
-                              paste(missing_sig, collapse = ","), ")"); next
+                              paste(missing_sig, collapse = ","), ")")
+        add_excluded(t, "marker", errors[[t]])
+        next
       }
       df$marker <- score
     } else {
-      if (!marker %in% colnames(df)) { errors[[t]] <- paste0("gene missing: ", marker); next }
+      if (!marker %in% colnames(df)) {
+        errors[[t]] <- paste0("gene missing: ", marker)
+        add_excluded(t, "marker", errors[[t]])
+        next
+      }
       df$marker <- suppressWarnings(as.numeric(df[[marker]]))
     }
 
-    # 分析样本 = time/status/marker 与所用协变量的完整个案（保证标准化与建模同一样本）
-    conf_avail <- intersect(confounders, colnames(df))
-    # 剔除该队列中恒定(单水平)的协变量, 避免 coxph 报错导致整队列被弃
-    if (length(conf_avail)) {
-      okv <- vapply(conf_avail, function(cn)
+    # analysis sample = complete cases of (time, status, marker) and the
+    # covariates used, so that standardisation and the model use one sample
+    conf_all <- intersect(confounders, colnames(df))
+    conf_avail <- conf_all
+    if (length(conf_all)) {
+      okv <- vapply(conf_all, function(cn)
         length(unique(df[[cn]][!is.na(df[[cn]])])) > 1L, logical(1))
-      conf_avail <- conf_avail[okv]
+      conf_avail <- conf_all[okv]
+    }
+    const_cov <- setdiff(conf_all, conf_avail)
+    if (length(const_cov)) {
+      detail <- "constant in this cohort"
+      reason <- sprintf(paste0("covariate(s) %s take a single value in this cohort, ",
+                               "so they cannot be co-estimated"),
+                        paste(const_cov, collapse = ", "))
+      for (v in const_cov)
+        mods[[length(mods) + 1L]] <- data.frame(cohort = t, variable = v,
+                                                detail = detail, reason = reason,
+                                                stringsAsFactors = FALSE)
+      if (!isTRUE(auto_repair)) {
+        add_excluded(t, "model", paste0("not estimable (auto_repair = FALSE): ", reason,
+                                        ". The covariate(s) ", paste(const_cov, collapse = ", "),
+                                        " would have to be dropped; set auto_repair = TRUE ",
+                                        "to repair the model and record the modification."))
+        next
+      }
     }
     for (cn in conf_avail)
       if (is.character(df[[cn]])) {
@@ -126,16 +344,32 @@ cpas_meta <- function(datasets, marker, type = "OS",
         df[[cn]] <- if (all(is.na(num) == is.na(df[[cn]]))) num else factor(df[[cn]])
       } else if (is.logical(df[[cn]])) df[[cn]] <- factor(df[[cn]])
     req <- c(tc, sc, "marker", conf_avail)
+    n_before <- nrow(df)
     keep <- stats::complete.cases(df[req]) & is.finite(df[[tc]]) &
       is.finite(df$marker) & df[[tc]] >= 0
     df <- df[keep, , drop = FALSE]
-    if (nrow(df) < 10) { errors[[t]] <- sprintf("insufficient after cleaning (n=%d)", nrow(df)); next }
+    if (n_before - nrow(df) > 0)
+      rows_dropped[[length(rows_dropped) + 1L]] <- data.frame(
+        cohort = t, n_dropped = n_before - nrow(df),
+        reason = "incomplete or non-finite (time, status, marker, covariates)",
+        stringsAsFactors = FALSE)
+    if (nrow(df) < 10) {
+      errors[[t]] <- sprintf("insufficient after cleaning (n=%d)", nrow(df))
+      add_excluded(t, "sample", errors[[t]])
+      next
+    }
     sdx <- stats::sd(df$marker)
-    if (is.na(sdx) || sdx <= 0) { errors[[t]] <- "marker constant"; next }
-    df$marker <- (df$marker - mean(df$marker)) / sdx   # per-SD 标准化(跨平台可比)
+    if (is.na(sdx) || sdx <= 0) {
+      errors[[t]] <- "marker constant"
+      add_excluded(t, "marker", errors[[t]])
+      next
+    }
+    df$marker <- (df$marker - mean(df$marker)) / sdx   # per-SD scaling
     events <- sum(df[[sc]] == 1, na.rm = TRUE)
     if (events < min_events || length(unique(df[[sc]])) < 2) {
-      errors[[t]] <- sprintf("insufficient (n=%d, events=%d)", nrow(df), events); next
+      errors[[t]] <- sprintf("insufficient (n=%d, events=%d)", nrow(df), events)
+      add_excluded(t, "sample", errors[[t]])
+      next
     }
     vars <- c("marker", conf_avail)
     diag <- .cpas_COX_diag(stats::as.formula("survival::Surv(time, status) ~ ."),
@@ -143,91 +377,376 @@ cpas_meta <- function(datasets, marker, type = "OS",
                                       df[, vars, drop = FALSE]))
     if (!diag$ok) {
       errors[[t]] <- paste0("cox: ", substr(diag$reason, 1, 120))
+      add_excluded(t, "model", errors[[t]])
       next
     }
     fit <- diag$fit
+    ph <- tryCatch(survival::cox.zph(fit), error = function(e) NULL)
+    if (!is.null(ph)) {
+      tb <- as.data.frame(ph$table)
+      ph_list[[length(ph_list) + 1L]] <- data.frame(
+        cohort = t, term = rownames(tb), p = tb$p, stringsAsFactors = FALSE)
+    }
     b <- stats::coef(fit)[["marker"]]; se <- sqrt(diag(stats::vcov(fit)))[["marker"]]
-    per[[t]] <- data.frame(dataset = t, endpoint = tok, n = nrow(df), events = events,
+    per[[t]] <- data.frame(dataset = t, endpoint = tok,
+                           pooling_class = cls$pooling_class,
+                           n = nrow(df), events = events,
                            HR = exp(b), lower = exp(b - 1.96 * se), upper = exp(b + 1.96 * se),
                            logHR = b, se = se,
                            p = 2 * stats::pnorm(-abs(b / se)), stringsAsFactors = FALSE)
   }
 
   if (!length(per)) {
-    # keep the per-dataset reasons: the caller needs to know whether a gene was
-    # missing on the platform, the marker was constant or the events were few
-    why <- if (length(errors))
-      paste(sprintf("%s: %s", names(errors), unlist(errors)), collapse = "; ") else "no reason recorded"
+    # keep the per-cohort reasons: the caller needs to know whether a gene was
+    # missing on the platform, the marker was constant, the events were few, the
+    # token was not exact under pooling = "exact", or the model needed repair
+    why <- if (nrow(excluded))
+      paste(sprintf("%s: %s", excluded$cohort, excluded$reason), collapse = "; ")
+    else if (length(errors))
+      paste(sprintf("%s: %s", names(errors), unlist(errors)), collapse = "; ")
+    else "no reason recorded"
     stop("no dataset produced estimable results. Reasons: ", why, call. = FALSE)
   }
   if (length(per) == 1L)
     message("Only one dataset produced estimable results; the 'pooled' row is that dataset's estimate.")
   pc <- do.call(rbind, per)
+  pc <- pc[order(match(pc$dataset, datasets)), , drop = FALSE]
+  rownames(pc) <- NULL
   tok_used <- unique(pc$endpoint)
   if (length(tok_used) > 1L)
     warning("Cohorts contribute different endpoint tokens within family '", type, "': ",
             paste(sprintf("%s=%s", pc$dataset, pc$endpoint), collapse = ", "),
             ". Tokens of one family are pooled by design; the per-cohort token is kept in ",
             "per_dataset$endpoint and should be reported.", call. = FALSE)
-  pooled <- meta_pool(pc$logHR, pc$se, p = pc$p, method = method)
+  pooled <- meta_pool(pc$logHR, pc$se, p = pc$p, method = method,
+                      pi_method = pi_method)
   pooled$total_n <- sum(pc$n)
   pooled$total_events <- sum(pc$events)
-  out <- list(input = list(datasets = datasets, marker = marker, type = type,
-                           method = method, confounders = confounders,
+  pooled$pooling <- pooling
+  pooled$pooling_classes <- paste(sort(unique(pc$pooling_class)), collapse = ", ")
+  pooled$overlap_mode <- overlap
+  # The pairs stay a data.frame, so they are stored as a one-element list column
+  # (the standard way to keep a table inside a rectangular data.frame) and the
+  # plain data.frame is also returned as $overlap_pairs on the result.
+  pooled[["overlap_pairs"]] <- list(ov_pairs)
+  pooled$overlap_pairs_text <- if (nrow(ov_pairs))
+    paste(sprintf("%s/%s (%s shared)", ov_pairs$AccessionA, ov_pairs$AccessionB,
+                  ov_pairs$SharedPatients), collapse = "; ") else ""
+  pooled$overlap_source <- ov_source
+  mods_tb <- if (length(mods)) do.call(rbind, mods) else
+    .cpas_empty_df(c("cohort", "variable", "detail", "reason"))
+  rd_tb <- if (length(rows_dropped)) do.call(rbind, rows_dropped) else
+    .cpas_empty_df(c("cohort", "n_dropped", "reason"))
+  rd_tb$n_dropped <- as.integer(rd_tb$n_dropped)
+  lookup_tb <- if (length(lookup)) {
+    tb <- do.call(rbind, lookup)
+    tb <- tb[, c("accession", "family", "token", "token_role",
+                 "pooling_class", "pooling_class_source"), drop = FALSE]
+    rownames(tb) <- NULL
+    tb[tb$accession %in% pc$dataset, , drop = FALSE]
+  } else .cpas_empty_df(c("accession", "family", "token", "token_role",
+                          "pooling_class", "pooling_class_source"))
+  ph_tb <- if (length(ph_list)) do.call(rbind, ph_list) else NULL
+  notes <- character(0)
+  if (!isTRUE(auto_repair))
+    notes <- c(notes, "auto_repair = FALSE (fail-safe): a model that would need covariates dropped, levels merged or rows excluded is reported as not estimable instead of being repaired")
+  if (!identical(pi_method, "t"))
+    notes <- c(notes, sprintf("pi_method = \"%s\": the primary prediction interval uses %s instead of the default t(k-2) construction (the default interval is returned as the clearly labelled alternative)",
+                              pi_method, pooled$pi_rule))
+  if (identical(pooling, "exact"))
+    notes <- c(notes, sprintf("pooling = \"exact\": only Exact-equivalent rows were pooled (%d of %d requested cohorts entered)",
+                              nrow(pc), length(datasets)))
+  if (nrow(ov_drop))
+    notes <- c(notes, sprintf("overlap = \"dedupe\" removed %d cohort(s): %s",
+                              nrow(ov_drop), paste(ov_drop$cohort, collapse = ", ")))
+  if (is.na(ov_source) || grepl("^unavailable", ov_source))
+    notes <- c(notes, "the shared-patient register is not shipped in this build, so overlap could not be checked")
+  manifest <- .cpas_manifest_new(
+    analysis = "cpas_meta",
+    cohorts = pc$dataset,
+    family = family,
+    token = paste(sort(unique(pc$endpoint)), collapse = ", "),
+    tokens = stats::setNames(pc$endpoint, pc$dataset),
+    token_role = paste(sort(unique(lookup_tb$token_role)), collapse = ", "),
+    pooling = pooling,
+    pooling_classes = strsplit(pooled$pooling_classes, ", ", fixed = TRUE)[[1]],
+    pooling_table = lookup_tb,
+    overlap_mode = overlap, overlap_pairs = ov_pairs, overlap_dropped = ov_drop,
+    overlap_source = ov_source,
+    selection_rule = sprintf(paste0("the %d cohort(s) supplied in 'datasets' were requested for family %s ",
+                                    "and the concrete token each one provides was resolved from the catalog; ",
+                                    "%d cohort(s) entered the pool and %d were excluded (reasons in $excluded)"),
+                             length(datasets), family, nrow(pc), nrow(excluded)),
+    dropped_rows = rd_tb, dropped_covariates = mods_tb,
+    cut_rule = "not applicable (meta-analysis of a continuous marker; no cut-point is searched)",
+    meta_method = pooled$method,
+    auto_repair = isTRUE(auto_repair),
+    pi_method = pi_method,
+    tau2 = pooled$tau2, I2 = pooled$I2,
+    pi_primary = c(lower = pooled$pi_lower, upper = pooled$pi_upper),
+    pi_primary_rule = pooled$pi_rule,
+    pi_alt = c(lower = pooled$pi_alt_lower, upper = pooled$pi_alt_upper),
+    pi_alt_rule = pooled$pi_alt_rule,
+    ph_test = if (is.null(ph_tb)) NULL else list(table = ph_tb),
+    notes = notes)
+  out <- list(input = list(datasets = datasets, datasets_requested = datasets_req,
+                           marker = marker, type = type, family = family,
+                           method = method, method_requested = method_req,
+                           pi_method = pi_method,
+                           pooling = pooling, overlap = overlap,
+                           auto_repair = auto_repair, confounders = confounders,
                            time = Sys.time()),
-              per_dataset = pc, pooled = pooled, errors = errors)
+              settings = list(method = method, method_requested = method_req,
+                              pi_method = pi_method,
+                              pooling = pooling, overlap = overlap,
+                              auto_repair = auto_repair),
+              per_dataset = pc, pooled = pooled, errors = errors,
+              excluded = excluded,
+              not_estimable = excluded[excluded$stage == "model", , drop = FALSE],
+              modifications = mods_tb,
+              overlap_pairs = ov_pairs,
+              manifest = manifest)
   class(out) <- "cpas_meta"
   out
 }
 
-meta_pool <- function(b, se, p = NULL, method = c("RE", "FE")) {
-  method <- match.arg(method)
+# The four pooling methods; "RE" is the historical spelling of "DL".
+.cpas_meta_methods <- c("REML", "DL", "HK", "FE")
+
+.cpas_meta_method <- function(method) {
+  m <- toupper(as.character(method)[1])
+  if (is.na(m) || !nzchar(m))
+    stop("'method' must be one of ", paste(.cpas_meta_methods, collapse = ", "), ".",
+         call. = FALSE)
+  if (identical(m, "RE")) m <- "DL"          # today's estimator, legacy spelling
+  if (!m %in% .cpas_meta_methods)
+    stop("'method' must be one of ", paste(.cpas_meta_methods, collapse = ", "),
+         " (\"RE\" is accepted as \"DL\"); got \"", method[1], "\".", call. = FALSE)
+  m
+}
+
+# DerSimonian-Laird tau^2 (the estimator this package used before REML)
+.cpas_tau2_dl <- function(b, se, w = 1 / se^2) {
+  k <- length(b)
+  bfe <- sum(w * b) / sum(w)
+  Q <- sum(w * (b - bfe)^2)
+  max(0, (Q - k + 1) / (sum(w) - sum(w^2) / sum(w)))
+}
+
+# REML tau^2: the root of the REML estimating equation of the standard
+# random-effects model,
+#   g(tau2) = sum(w^2 * ((b - mu)^2 - v)) / sum(w^2) + 1 / sum(w) - tau2 = 0,
+#   w = 1/(v + tau2), mu = sum(w b)/sum(w)
+# solved by bisection (only a sign change is needed, so it cannot stall the way
+# a fixed-point iteration does when the map's derivative approaches 1). A root
+# at the boundary means the estimate is truncated at tau^2 = 0. Falls back to DL
+# (with a recorded note) when no bracket can be found.
+.cpas_tau2_reml <- function(b, se, tol = 1e-12, maxit = 300L) {
+  v <- se^2
+  start <- .cpas_tau2_dl(b, se)
+  g <- function(t2) {
+    w <- 1 / (v + t2)
+    mu <- sum(w * b) / sum(w)
+    sum(w^2 * ((b - mu)^2 - v)) / sum(w^2) + 1 / sum(w) - t2
+  }
+  g0 <- g(0)
+  if (!is.finite(g0))
+    return(list(tau2 = start, converged = FALSE, truncated = FALSE,
+                iterations = 0L, start = start))
+  if (g0 <= 0)
+    return(list(tau2 = 0, converged = TRUE, truncated = TRUE,
+                iterations = 0L, start = start))
+  hi <- max(start, 1e-8)
+  it <- 0L
+  while (g(hi) > 0 && it < maxit) { hi <- hi * 2 + 1e-6; it <- it + 1L }
+  if (g(hi) > 0)
+    return(list(tau2 = start, converged = FALSE, truncated = FALSE,
+                iterations = it, start = start))
+  lo <- 0
+  for (i in seq_len(200L)) {
+    mid <- (lo + hi) / 2
+    if (g(mid) > 0) lo <- mid else hi <- mid
+    if (hi - lo <= tol * (1 + hi)) break
+  }
+  list(tau2 = (lo + hi) / 2, converged = TRUE, truncated = FALSE,
+       iterations = it + 200L, start = start)
+}
+
+# Hartung-Knapp-Sidik-Jonkman adjusted variance of the pooled estimate:
+#   se = sqrt( (1/(k-1)) * sum(w (b - mu)^2) / sum(w) ),  95% CI = mu +/- t(k-1) * se
+.cpas_hk <- function(b, w, mu, se_re) {
+  k <- length(b)
+  if (k < 2L) return(list(se = se_re, note = "HK needs at least 2 cohorts; the random-effects SE was used"))
+  denom <- (k - 1) * sum(w)
+  num <- sum(w * (b - mu)^2)
+  se <- if (denom > 0 && num > 0) sqrt(num / denom) else se_re
+  list(se = se, note = NA_character_)
+}
+
+meta_pool <- function(b, se, p = NULL, method = c("REML", "DL", "HK", "FE"),
+                      pi_method = c("t", "normal", "HK")) {
+  method_req <- as.character(method)[1]
+  method <- .cpas_meta_method(method_req)
+  pi_method <- .cpas_pi_method(pi_method)
   k <- length(b)
   if (k == 0L) stop("meta_pool(): no dataset estimates were supplied.")
+  if (length(se) != k) stop("meta_pool(): 'b' and 'se' must have the same length.")
   w <- 1 / se^2
   bfe <- sum(w * b) / sum(w)
   Q <- sum(w * (b - bfe)^2)
   df <- k - 1
   zi <- if (!is.null(p) && length(p) == k) sign(b) * stats::qnorm(1 - p / 2) else NULL
   pi_lower <- NA_real_; pi_upper <- NA_real_
+  pi_alt_lower <- NA_real_; pi_alt_upper <- NA_real_
+  # The prediction interval of a NEW cohort.  Three construction rules, selected
+  # by pi_method; the rule actually used is recorded in pi_rule / pi_alt_rule:
+  #   "t"      bm +/- t(0.975, k-2) * sqrt(se_pooled^2 + tau2)   (the documented
+  #            default; needs k >= 3)
+  #   "normal" bm +/- 1.96         * sqrt(se_pooled^2 + tau2)     (needs k >= 2)
+  #   "HK"     bm +/- t(0.975, k-1) * sqrt(se_HK^2 + tau2), where se_HK is the
+  #            Hartung-Knapp-Sidik-Jonkman adjusted SE of the pooled estimate
+  #            (needs k >= 2)
+  # Whichever is the primary rule, the other construction is returned beside it
+  # as a clearly labelled alternative (pi_alt_*) so a paper can report both.
+  pi_rules <- .cpas_pi_rule_text(pi_method)
+  pi_rule <- pi_rules$primary
+  pi_alt_rule <- pi_rules$alt
   if (k == 1L) {
     # A single cohort is not a meta-analysis: report that cohort's own estimate
     # and leave the heterogeneity statistics undefined (NA, never NaN).
     return(data.frame(
-      method = method, k = 1L,
+      method = method, method_requested = method_req, tau2_method = method,
+      pi_method = pi_method,
+      note = if (identical(method, "HK")) "HK needs at least 2 cohorts; a single cohort's own estimate is reported" else NA_character_,
+      k = 1L,
       total_n = NA_integer_, total_events = NA_integer_,
       HR = exp(b), lower = exp(b - 1.96 * se), upper = exp(b + 1.96 * se),
       logHR = b, se = se, p = 2 * stats::pnorm(-abs(b / se)),
       Q = 0, df = 0L, p_heterogeneity = NA_real_, I2 = NA_real_, tau2 = NA_real_,
       pi_lower = NA_real_, pi_upper = NA_real_,
+      pi_alt_lower = NA_real_, pi_alt_upper = NA_real_,
+      pi_rule = pi_rule, pi_alt_rule = pi_alt_rule,
       z_stouffer = if (is.null(zi)) NA_real_ else sum(zi),
       p_stouffer = if (is.null(zi)) NA_real_ else 2 * stats::pnorm(-abs(sum(zi)))))
   }
-  tau2 <- if (method == "RE") max(0, (Q - df) / (sum(w) - sum(w^2) / sum(w))) else 0
+  note <- NA_character_
+  tau2_method <- method
+  if (identical(method, "FE")) {
+    tau2 <- 0
+    tau2_method <- "FE (tau2 fixed at 0)"
+  } else if (identical(method, "DL")) {
+    tau2 <- .cpas_tau2_dl(b, se, w)
+  } else {
+    # REML and HK share the REML tau^2 (HK is a variance adjustment on top of
+    # the random-effects model, not a separate tau^2 estimator)
+    r <- .cpas_tau2_reml(b, se)
+    tau2 <- r$tau2
+    tau2_method <- "REML"
+    if (!isTRUE(r$converged)) {
+      tau2 <- r$start
+      tau2_method <- "DL (REML did not converge)"
+      note <- sprintf("REML tau^2 did not converge within %d iterations; the DerSimonian-Laird estimate was used instead", 200L)
+    } else if (isTRUE(r$truncated)) {
+      note <- "the REML estimate was truncated at tau^2 = 0"
+    }
+  }
   w2 <- 1 / (se^2 + tau2)
   bm <- sum(w2 * b) / sum(w2)
   seM <- sqrt(1 / sum(w2))
-  I2 <- if (Q > 0) max(0, (Q - df) / Q) else 0
-  # prediction interval: where the true effect of a NEW cohort is expected to lie
-  # (t distribution with k - 2 df; undefined for k < 3)
-  if (k >= 3L) {
-    tq <- stats::qt(0.975, df = k - 2)
-    se_pi <- sqrt(seM^2 + tau2)
-    pi_lower <- exp(bm - tq * se_pi); pi_upper <- exp(bm + tq * se_pi)
+  se_method <- "inverse-variance random effects"
+  crit <- 1.96
+  pv <- 2 * stats::pnorm(-abs(bm / seM))
+  if (identical(method, "HK")) {
+    hk <- .cpas_hk(b, w2, bm, seM)
+    seM <- hk$se
+    se_method <- "Hartung-Knapp-Sidik-Jonkman adjusted"
+    if (!is.na(hk$note)) note <- if (is.na(note)) hk$note else paste(note, hk$note, sep = "; ")
+    crit <- stats::qt(0.975, df = k - 1)
+    pv <- 2 * stats::pt(-abs(bm / seM), df = k - 1)
   }
+  I2 <- if (Q > 0) max(0, (Q - df) / Q) else 0
+  # The two ingredients every prediction-interval rule uses: the RE variance of
+  # the pooled estimate (seM, HK-adjusted when method = "HK") plus tau^2, and
+  # the same sum with the HK-adjusted SE, used by pi_method = "HK".
+  se_hk <- .cpas_hk(b, w2, bm, seM)$se
+  se_pi <- sqrt(seM^2 + tau2)
+  se_pi_hk <- sqrt(se_hk^2 + tau2)
+  pi_use <- .cpas_pi_bounds(bm, pi_method, se_pi, se_pi_hk, k)
+  pi_lower <- pi_use$lower; pi_upper <- pi_use$upper
+  alt_use <- .cpas_pi_bounds(bm, pi_use$alt, se_pi, se_pi_hk, k)
+  pi_alt_lower <- alt_use$lower; pi_alt_upper <- alt_use$upper
   zs <- NA_real_; ps <- NA_real_
   if (!is.null(zi)) {
     zs <- sum(zi) / sqrt(k)
     ps <- 2 * stats::pnorm(-abs(zs))
   }
-  data.frame(method = method, k = k, total_n = NA_integer_, total_events = NA_integer_,
-             HR = exp(bm), lower = exp(bm - 1.96 * seM), upper = exp(bm + 1.96 * seM),
-             logHR = bm, se = seM, p = 2 * stats::pnorm(-abs(bm / seM)),
+  data.frame(method = method, method_requested = method_req, tau2_method = tau2_method,
+             pi_method = pi_method,
+             note = note, k = k, total_n = NA_integer_, total_events = NA_integer_,
+             HR = exp(bm), lower = exp(bm - crit * seM), upper = exp(bm + crit * seM),
+             logHR = bm, se = seM, p = pv,
              Q = Q, df = df, p_heterogeneity = stats::pchisq(Q, df, lower.tail = FALSE),
              I2 = I2, tau2 = tau2,
              pi_lower = pi_lower, pi_upper = pi_upper,
+             pi_alt_lower = pi_alt_lower, pi_alt_upper = pi_alt_upper,
+             pi_rule = pi_rule, pi_alt_rule = pi_alt_rule,
+             se_method = se_method,
              z_stouffer = zs, p_stouffer = ps)
 }
+
+# The prediction-interval construction rules (spec B6). "t" is the documented
+# default inherited from the frozen 1.0.0 numbers; "normal" is the normal
+# approximation; "HK" uses the Hartung-Knapp-Sidik-Jonkman adjusted SE of the
+# pooled estimate with t(k-1). Case-insensitive.
+.cpas_pi_methods <- c("t", "normal", "HK")
+
+.cpas_pi_method <- function(x) {
+  v <- as.character(x)[1]
+  if (is.na(v)) v <- "t"
+  hit <- .cpas_pi_methods[tolower(.cpas_pi_methods) == tolower(v)]
+  if (!length(hit))
+    stop("'pi_method' must be one of ", paste(.cpas_pi_methods, collapse = ", "),
+         " (\"t\" is the default); got \"", x[1], "\".", call. = FALSE)
+  hit[1]
+}
+
+# Human-readable primary / alternative rule labels for a pi_method.
+.cpas_pi_rule_text <- function(pi_method) {
+  t_lab <- "t distribution with k-2 df on sqrt(se_pooled^2 + tau2)"
+  n_lab <- "normal approximation (1.96) on sqrt(se_pooled^2 + tau2)"
+  h_lab <- paste0("Hartung-Knapp-Sidik-Jonkman adjusted SE of the pooled estimate ",
+                  "with t(k-1) on sqrt(se_HK^2 + tau2)")
+  switch(pi_method,
+         t = list(primary = t_lab, alt = n_lab),
+         normal = list(primary = n_lab, alt = t_lab),
+         HK = list(primary = h_lab,
+                   alt = paste0("t distribution with k-2 df on sqrt(se_pooled^2 + tau2) ",
+                                "(unadjusted random-effects SE)")))
+}
+
+# One interval under a named rule.  Returns exp() bounds, NA when the rule needs
+# more cohorts than were supplied (t needs k >= 3, the other two k >= 2), so a
+# two-cohort pool yields NA for "t" and a finite normal / HK interval rather
+# than a NaN.
+.cpas_pi_bounds <- function(bm, rule, se_pi, se_pi_hk, k) {
+  rule <- .cpas_pi_method(rule)
+  if (identical(rule, "t")) {
+    if (k < 3L) return(list(lower = NA_real_, upper = NA_real_, alt = "normal",
+                            rule = "t"))
+    crit <- stats::qt(0.975, df = k - 2)
+    return(list(lower = exp(bm - crit * se_pi), upper = exp(bm + crit * se_pi),
+                alt = "normal", rule = rule))
+  }
+  if (k < 2L) return(list(lower = NA_real_, upper = NA_real_,
+                          alt = rule, rule = rule))
+  if (identical(rule, "normal"))
+    return(list(lower = exp(bm - 1.96 * se_pi), upper = exp(bm + 1.96 * se_pi),
+                alt = "t", rule = rule))
+  crit <- stats::qt(0.975, df = k - 1)
+  list(lower = exp(bm - crit * se_pi_hk), upper = exp(bm + crit * se_pi_hk),
+       alt = "t", rule = rule)
+}
+
 
 #' @title Print method for cpas_meta objects
 #' @description Prints a concise summary of a \code{cpas_meta} analysis result.
@@ -239,32 +758,76 @@ print.cpas_meta <- function(x, ...) {
   cat("CanPAS integrative (meta) analysis\n")
   cat("marker:", x$input$marker, "| type:", x$input$type,
       "| method:", x$input$method,
+      "| pi_method:", if (is.null(x$input$pi_method)) "t" else x$input$pi_method,
       "| datasets:", nrow(x$per_dataset), "(failed:", length(x$errors), ")\n")
-  print(x$pooled, row.names = FALSE)
+  if (!is.null(x$input$pooling))
+    cat("pooling:", x$input$pooling, "| pooling classes pooled:",
+        if (is.null(x$pooled$pooling_classes) || is.na(x$pooled$pooling_classes))
+          "none" else x$pooled$pooling_classes,
+        "| auto_repair:", isTRUE(x$input$auto_repair), "\n")
+  ovp <- x$overlap_pairs
+  if (is.null(ovp) && is.list(x$pooled$overlap_pairs)) ovp <- x$pooled$overlap_pairs[[1]]
+  if (is.data.frame(ovp) && nrow(ovp))
+    cat("shared-patient pairs in this pool (overlap = \"", x$pooled$overlap_mode,
+        "\"): ",
+        paste(sprintf("%s/%s (%s)", ovp$AccessionA, ovp$AccessionB,
+                      ovp$SharedPatients), collapse = "; "),
+        "\n", sep = "")
+  if (!is.null(x$not_estimable) && nrow(x$not_estimable))
+    cat("not estimable (fail-safe, auto_repair = FALSE): ",
+        paste(sprintf("%s (%s)", x$not_estimable$cohort,
+                      x$not_estimable$reason), collapse = "; "), "\n", sep = "")
+  # the list column (the overlapping pairs themselves) is not printed as a
+  # column; it is summarised in the lines above and available as $overlap_pairs
+  po_show <- x$pooled[, !vapply(x$pooled, is.list, logical(1)), drop = FALSE]
+  print(po_show, row.names = FALSE)
+  if (is.data.frame(ovp) && nrow(ovp))
+    cat("$pooled$overlap_pairs[[1]] and $overlap_pairs hold ", nrow(ovp),
+        " shared-patient pair(s); $pooled$overlap_pairs_text holds the same as text.\n",
+        sep = "")
+  pm <- if (is.null(x$pooled$pi_method)) "t" else x$pooled$pi_method
+  pi_lab <- switch(pm, t = "t k-2", normal = "normal", HK = "HK t(k-1)", pm)
+  alt_lab <- switch(pm, t = "normal", normal = "t k-2", HK = "t k-2, unadjusted SE", "alternative")
   if (!is.null(x$pooled$pi_lower) && is.finite(x$pooled$pi_lower))
-    cat(sprintf("95%% prediction interval for a new dataset: [%.3f, %.3f]\n",
-                x$pooled$pi_lower, x$pooled$pi_upper))
+    cat(sprintf("95%% prediction interval for a new dataset (primary, %s): [%.3f, %.3f]\n",
+                pi_lab, x$pooled$pi_lower, x$pooled$pi_upper))
+  if (!is.null(x$pooled$pi_alt_lower) && is.finite(x$pooled$pi_alt_lower))
+    cat(sprintf("95%% prediction interval (alternative, %s): [%.3f, %.3f]\n",
+                alt_lab, x$pooled$pi_alt_lower, x$pooled$pi_alt_upper))
   cat("\nPer-dataset:\n"); print(x$per_dataset[, c("dataset","n","events","HR","lower","upper","p")], row.names = FALSE)
   invisible(x)
 }
 
-#' @title 整合分析森林图
-#' @description 绘制 \code{\link{cpas_meta}} 的逐队列 HR(95\% CI) 与合并 HR 森林图。
-#' @param x 一个 \code{cpas_meta} 对象。
-#' @param digits 图中标注保留的小数位(默认 4)。
-#' @param show_stars 是否在面板左缘绘制逐队列显著性星号(\code{*} p<0.05、\code{**} p<0.01、\code{***} p<0.001)，默认 \code{TRUE}。
-#' @param label_size 合并 HR / 95\% PI 标注的字号(默认 4.2)。
-#' @param star_size 星号与 \code{Overall} 文字的字号，默认 \code{0.85 * label_size}。
-#' @param y_headroom y 轴顶部留白，避免 Overall 菱形及其 CI 被面板裁切(默认 3.6)。
-#' @param x_frac 面板左缘起的横向比例位置，用于锚定星号与合并标注(默认 0.02)。
-#' @param label_lift 合并标注相对 Overall 行的纵向偏移(默认 1)。
-#' @param label_where 合并标注位置：\code{"inside"} 置于面板左上角内，\code{"subtitle"} 置于面板上方(默认 \code{"inside"})。
-#' @param ... 保留，暂未使用。
-#' @return ggplot 对象。
+#' @title Forest plot of an integrative (meta) analysis
+#' @description Draws the per-cohort HR (95\% CI) together with the pooled HR of
+#' a \code{\link{cpas_meta}} result as a forest plot.
+#' @param x An object of class \code{cpas_meta}.
+#' @param digits Decimal places used for the annotations in the figure
+#'   (default 4).
+#' @param show_stars Whether to draw the per-cohort significance stars at the
+#'   left edge of the panel (\code{*} p<0.05, \code{**} p<0.01,
+#'   \code{***} p<0.001); default \code{TRUE}.
+#' @param label_size Font size of the pooled HR / 95\% PI annotation (default 4.2).
+#' @param star_size Font size of the stars and of the \code{Overall} label;
+#'   defaults to \code{0.85 * label_size}.
+#' @param y_headroom Head-room at the top of the panel so the \code{Overall}
+#'   diamond and its confidence interval are not clipped (default 3.6).
+#' @param x_frac Horizontal position, as a fraction from the left edge of the
+#'   panel, used to anchor the stars and the pooled annotation (default 0.02).
+#' @param label_lift Vertical offset of the pooled annotation relative to the
+#'   \code{Overall} row (default 1).
+#' @param label_where Where to place the pooled annotation: \code{"inside"}
+#'   puts it in the top-left corner of the panel and \code{"subtitle"} above the
+#'   panel (default \code{"inside"}).
+#' @param ... Reserved, currently unused.
+#' @return A \code{ggplot} object.
 #' @details
-#' 自本版起，星号与合并标注锚定在由固定坐标轴留白反推得到的\strong{有限}数据值上
-#' (不再用 \code{x = -Inf}：那会经 \code{log10} 变成 \code{NaN}，文本图层被静默丢弃并告警)。
-#' 逐队列显著性星号位于面板内左缘，合并 HR / 95\% PI 标注默认置于面板左上角内。
+#' The stars and the pooled annotation are anchored to a \strong{finite} data
+#' value derived from the fixed axis expansion, not to \code{x = -Inf}: an
+#' infinite value becomes \code{NaN} through the log10 scale, and the text layer
+#' is then silently dropped with a warning. The per-cohort significance stars sit
+#' at the left edge inside the panel, and the pooled HR / 95\% PI annotation is
+#' placed in the top-left corner of the panel by default.
 #' @examples
 #' \dontrun{
 #'    m <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS")
@@ -358,10 +921,14 @@ plot_meta_forest <- function(x, digits = 4,
   p
 }
 
-#' @title 敏感性分析：Leave-one-out
-#' @description 对每个队列逐一剔除后重新计算合并估计，评估单一队列对整体结果的影响。
-#' @param x 一个 \code{cpas_meta} 对象。
-#' @return 数据框：\code{left_out} 为被剔除的队列，其余列为重新合并的汇总。
+#' @title Sensitivity analysis: leave-one-out
+#' @description Refits the pooled estimate once per cohort, each time leaving one
+#' cohort out, so the influence of a single cohort on the overall result can be
+#' assessed.
+#' @param x An object of class \code{cpas_meta}.
+#' @return data.frame: \code{left_out} names the cohort that was removed and the
+#'   remaining columns are the re-pooled summary for that omission, computed with
+#'   the same pooling method (\code{x$input$method}) as the original analysis.
 #' @examples
 #' \dontrun{
 #'    m <- cpas_meta(c("GSE31210", "GSE37745", "GSE42127"), marker = "TP53", type = "DFS")
@@ -375,65 +942,101 @@ loo_meta <- function(x) {
   out <- lapply(seq_len(nrow(pc)), function(i) {
     d <- pc[-i, , drop = FALSE]
     # with 2 cohorts the remaining estimate is that cohort's own result (k = 1)
-    po <- meta_pool(d$logHR, d$se, p = d$p, method = x$input$method)
+    po <- meta_pool(d$logHR, d$se, p = d$p, method = x$input$method,
+                    pi_method = if (is.null(x$input$pi_method)) "t" else x$input$pi_method)
     data.frame(left_out = pc$dataset[i], po)
   })
   do.call(rbind, out)
 }
 
-#' @title 整合 KM（各队列内中位分组）
-#' @description 每个队列 marker 中位切 High/Low，然后按 method 合并：
-#'   "ipd"  直接合并患者做 pooled survfit（log-rank 同时给 pooled 与按队列分层两个 p）；
-#'   "meta" 两阶段：对每个时点各队列 KM 的生存概率 S(t) 用 log(-log S) 转换后逆方差合并(RE/FE)，
-#'           得到合并生存曲线与 1/3/5 年表；
-#'   "both" 同时输出两者。
-#' @param merged 命名列表：各队列 merge_surv_expr 的 merged data.frame；
-#'   名称需为 catalog 中的 accession, 以便按家族解析具体终点。
-#'   返回对象包含 \code{dataset_endpoints} (各数据集实际使用的终点)。
-#' @param marker 基因列名。
-#' @param type 终点（OS/RFS/...）。
-#' @param method "ipd"/"meta"/"both"。
-#' @param landmarks 输出时点(年)。
-#' @param meta_method RE = 随机效应(DerSimonian-Laird,默认),FE = 固定效应。
-#' @param cut 高/低分组规则,三种:\code{"median"}(默认)= 各队列内部取前 50%,
-#'   即 High = marker 高于**该队列自身**的中位数;\code{"top_pct"}= 各队列内部按
-#'   表达**从高到低排序取前 \code{top_pct}\%** 为 High(阈值 = 该队列的
-#'   \eqn{100 - top_pct} 百分位,\code{top_pct = 25} 即前 25% 为高表达);
-#'   \code{"custom"}= 用绝对阈值 \code{cut_value},大于阈值为 High、小于等于为 Low。
-#'   绝对阈值在这里是有意义的,因为镜像提供的所有矩阵都在 log2 尺度上(论文 2.3 节),
-#'   同一个数值在每个队列里含义相同;但按百分位分组才是"高表达 vs 低表达"的常规读法,
-#'   应用界面只提供 median 与 top_pct 两种。这里刻意**不**提供"逐队列搜索最佳切点":
-#'   那会把论文 3.4 节量化的切点搜索膨胀在每个队列各做一遍,合并后误差被叠加。
-#' @param top_pct \code{cut = "top_pct"} 时的百分比:1-99 之间的单个有限数值,表达
-#'   最高的 \code{top_pct}\% 患者记为 High。阈值用 \code{stats::quantile()} 的
-#'   默认插值(type 7)计算;当多名患者的表达值恰好等于阈值时,分入 High 的比例可能
-#'   略高于 \code{top_pct}\%,各队列实际阈值与人数都会返回(\code{cohort_thresholds}、
-#'   \code{cutpoint})。若某队列因此一侧为空,该队列记入 \code{empty_cohorts} 并附
-#'   原因,不参与合并。
-#' @param cut_value \code{cut = "custom"} 时的阈值:单个有限数值,作用于 log2 表达
-#'   (或签名得分)。若某队列在阈值一侧没有病人,该队列记入 \code{empty_cohorts}
-#'   并附原因,不参与合并。
-#' @return 普通 \code{list}(没有 class 属性;不是 S3 对象,没有对应的方法分派):
-#'   \item{\code{df}:}{合并后的分析数据(time/status/marker/dataset/group)}
-#'   \item{\code{datasets}, \code{n_high}, \code{n_low}, \code{method}, \code{cutpoint}:}{纳入的数据集与分组规模}
-#'   \item{\code{dataset_endpoints}:}{各数据集实际使用的终点 token(命名向量)}
-#'   \item{\code{cut}, \code{top_pct}, \code{cut_value}, \code{cutpoint}:}{实际使用的
-#'     分组规则、其参数或阈值,以及可直接打印的规则说明;\code{cohort_thresholds}
-#'     给出 \code{cut = "top_pct"} 时各队列的实际阈值}
-#'   \item{\code{n_dropped}, \code{empty_cohorts}, \code{empty_reasons}:}{分组规则对纳入的
-#'     队列是穷尽的(\code{n_dropped} 恒为 0);阈值/百分位规则在某队列里把一侧取空时,
-#'     该队列记入 \code{empty_cohorts} 并附原因,不参与合并}
-#'   \item{\code{skipped_cohorts}, \code{skipped_reasons}:}{因数据不足被排队的队列及其原因
-#'     ——终点无法解析、缺少列、完整(time, status, marker)三元组少于 10 行,或 marker
-#'     在该队列中只有一个取值。这些队列不参与合并,但**不会被静默丢弃**}
-#'   \item{\code{fit}, \code{logrank_p}, \code{logrank_p_stratified}:}{method 为 ipd/both 时的 survfit 与 log-rank p(合并 / 按队列分层)}
-#'   \item{\code{meta_landmarks}, \code{meta_curve}:}{method 为 meta/both 时的时点合并生存表与细网格曲线}
+#' @title Pooled Kaplan-Meier (marker split inside every cohort)
+#' @description Splits each cohort into High/Low at the marker and then pools by
+#' \code{method}:
+#'   \code{"ipd"}  pools the patients directly into one \code{survfit} (the
+#'     log-rank test is reported both unstratified and stratified by cohort);
+#'   \code{"meta"} two-stage: at every time point the cohorts' KM survival
+#'     probabilities S(t) are transformed with log(-log S) and pooled by inverse
+#'     variance (RE/FE), giving a pooled survival curve and the 1/3/5-year table;
+#'   \code{"both"} returns both routes.
+#' @param merged Named list of the cohorts' \code{merge_surv_expr} merged
+#'   data.frames. The names must be catalog accessions so the concrete endpoint
+#'   token of each cohort can be resolved. The result carries
+#'   \code{dataset_endpoints}, the token every dataset actually used.
+#' @param marker Gene column name.
+#' @param type Endpoint family or token (OS/RFS/...).
+#' @param method \code{"ipd"}, \code{"meta"} or \code{"both"}.
+#' @param landmarks Time points, in years, at which the pooled survival
+#'   probabilities are tabulated and drawn (default 1, 3 and 5 years).
+#' @param meta_method Pooling method for the time-point survival probabilities:
+#'   \code{"RE"}/\code{"DL"} (DerSimonian-Laird random effects, the default kept
+#'   for continuity with the published curves), \code{"REML"}, \code{"HK"} or
+#'   \code{"FE"} (fixed effect).
+#' @param cut High/low split rule, one of three: \code{"median"} (default) takes
+#'   the top 50\% inside every cohort, i.e. High = marker above \strong{that
+#'   cohort's own} median; \code{"top_pct"} sorts each cohort by expression and
+#'   takes the highest \code{top_pct}\% as High (threshold = that cohort's
+#'   \eqn{100 - top_pct} percentile, so \code{top_pct = 25} means the top 25\%
+#'   are high expressors); \code{"custom"} uses the absolute threshold
+#'   \code{cut_value}, with High above it and Low at or below it. An absolute
+#'   threshold is meaningful here because every matrix served by the mirror is on
+#'   the log2 scale (Section 2.3 of the accompanying paper), so one value means
+#'   the same thing in every cohort; percentile splits are nevertheless the
+#'   conventional reading of "high versus low expression", and the application
+#'   offers only median and top_pct. A per-cohort search for the best cut point
+#'   is deliberately \strong{not} offered: it would repeat, cohort by cohort,
+#'   the cut-point search quantified in Section 3.4 and compound its inflation
+#'   when pooled.
+#' @param top_pct Percentage for \code{cut = "top_pct"}: a single finite value
+#'   between 1 and 99; the patients with the highest \code{top_pct}\% of
+#'   expression are High. The threshold is computed with the default
+#'   \code{stats::quantile()} interpolation (type 7); when several patients sit
+#'   exactly on the threshold the High group can be slightly larger than
+#'   \code{top_pct}\%, and the actual threshold and counts are returned
+#'   (\code{cohort_thresholds}, \code{cutpoint}). A cohort left one-sided by
+#'   the rule is recorded in \code{empty_cohorts} with its reason and does not
+#'   enter the pool.
+#' @param cut_value Threshold for \code{cut = "custom"}: a single finite value on
+#'   the log2 expression scale (or on the signature score). A cohort with no
+#'   patient on one side of the threshold is recorded in \code{empty_cohorts}
+#'   with its reason and does not enter the pool.
+#' @return An ordinary \code{list} (no class attribute; not an S3 object, so
+#'   there is no method dispatch):
+#'   \item{\code{df}:}{the pooled analysis data (time/status/marker/dataset/group)}
+#'   \item{\code{datasets}, \code{n_high}, \code{n_low}, \code{method}, \code{cutpoint}:}{the cohorts included and the size of each group}
+#'   \item{\code{dataset_endpoints}:}{the endpoint token every dataset actually used (named vector)}
+#'   \item{\code{cut}, \code{top_pct}, \code{cut_value}, \code{cutpoint}:}{the split
+#'     rule actually used, its parameter or threshold, and a printable description
+#'     of the rule; \code{cohort_thresholds} gives the per-cohort threshold when
+#'     \code{cut = "top_pct"}}
+#'   \item{\code{n_dropped}, \code{empty_cohorts}, \code{empty_reasons}:}{the split
+#'     rule is exhaustive for the cohorts that entered (\code{n_dropped} is always
+#'     0); when a threshold or percentile rule leaves one side empty in a cohort,
+#'     that cohort is recorded in \code{empty_cohorts} with its reason and does not
+#'     enter the pool}
+#'   \item{\code{skipped_cohorts}, \code{skipped_reasons}:}{cohorts excluded for
+#'     insufficient data and why - the endpoint could not be resolved, a column is
+#'     missing, fewer than 10 complete (time, status, marker) rows, or the marker
+#'     takes a single value in that cohort. These cohorts do not enter the pool but
+#'     are \strong{never silently dropped}}
+#'   \item{\code{fit}, \code{logrank_p}, \code{logrank_p_stratified}:}{the
+#'     \code{survfit} and the log-rank p (pooled / stratified by cohort) when
+#'     \code{method} is ipd or both}
+#'   \item{\code{meta_landmarks}, \code{meta_curve}:}{the time-point pooled
+#'     survival table and the fine-grid curve when \code{method} is meta or both}
+#'   \item{\code{manifest}:}{the analysis manifest
+#'     (\code{\link{cpas_manifest}}): the cut-point rule, the number of cut-points
+#'     searched (0: no search), the cohorts skipped and why, the versions and the
+#'     timestamp}
 #' @details
-#' 每队列内部按自身 marker 中位数分组(High = marker > median),因此比较的是"高于本队列中位"
-#' 与"低于本队列中位"的风险,而不是跨队列的绝对阈值;需要绝对阈值时请用 \code{plot_km()} 逐队列分析。
-#' IPD 合并同时给出未分层与按队列分层的 log-rank p,报告时建议给出后者。
-#' 时点合并中,超出某队列最长随访的时点会沿用该队列最后一次观察到的 S(t)(\code{extend = TRUE}),
-#' 每个时点实际贡献的队列数记录在 \code{meta_landmarks$k} 中。
+#' Each cohort is split on its own marker median (High = marker > that cohort's
+#' median), so what is compared is the risk above versus below each cohort's own
+#' median and not an absolute threshold across cohorts; when an absolute
+#' threshold is wanted, use \code{plot_km()} cohort by cohort. The IPD route
+#' reports the log-rank p both unstratified and stratified by cohort; reporting
+#' the stratified one is recommended. In the time-point route, a time point
+#' beyond a cohort's longest follow-up reuses that cohort's last observed S(t)
+#' (\code{extend = TRUE}), and the number of cohorts actually contributing at
+#' each time point is recorded in \code{meta_landmarks$k}.
 #' @examples
 #' \dontrun{
 #'    ## Pooled Kaplan-Meier from an explicitly built list of merged cohorts
@@ -619,6 +1222,30 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
     out$meta_landmarks <- ms$landmarks
     out$meta_curve <- ms$curve
   }
+  out$manifest <- .cpas_manifest_new(
+    analysis = "cpas_km_pooled",
+    cohorts = unique(df$dataset),
+    tokens = ep_used,
+    token_role = "resolved per cohort",
+    selection_rule = sprintf(paste0("the %d cohort(s) in the supplied 'merged' list that provided a usable ",
+                                    "(time, status, marker) triple for endpoint family '%s'; skipped: %s"),
+                             length(unique(df$dataset)), type,
+                             if (length(skipped)) paste(sprintf("%s (%s)", names(skipped),
+                                                               unlist(skipped)), collapse = "; ") else "none"),
+    dropped_rows = if (length(skipped)) data.frame(
+      cohort = names(skipped), n_dropped = NA_integer_, reason = unlist(skipped),
+      stringsAsFactors = FALSE) else NULL,
+    cut_rule = cut_label,
+    cut_points_searched = 0L,
+    search_adjusted_p = NA_real_,
+    meta_method = meta_method,
+    tau2 = if (!is.null(out$meta_landmarks) && "tau2" %in% colnames(out$meta_landmarks))
+      stats::median(out$meta_landmarks$tau2, na.rm = TRUE) else NA_real_,
+    I2 = if (!is.null(out$meta_landmarks)) stats::median(out$meta_landmarks$I2, na.rm = TRUE) else NA_real_,
+    notes = c("no cut-point is searched: the split is the requested rule applied inside every cohort, so the reported p-value is not search-adjusted",
+              if (identical(cut, "top_pct")) "top-percent split" else NULL,
+              if (length(empty)) paste0("cohort(s) left one-sided by the rule and not pooled: ",
+                                        paste(names(empty), collapse = ", ")) else NULL))
   invisible(out)
 }
 
@@ -673,16 +1300,20 @@ km_surv_meta <- function(df, times, meta_method = "RE") {
   list(landmarks = land, curve = do.call(rbind, res_c))
 }
 
-#' @title 各队列 KM 小图网格（每个队列内中位分组的独立 KM）
-#' @description 将 \code{\link{cpas_km_pooled}} 结果按数据集拆分为独立的 KM 小图并排布为网格。
-#' @param km 一个 \code{cpas_km_pooled} 对象。
-#' @param ncol 网格列数。
-#' @param draw \code{TRUE}（默认）立即用 \code{gridExtra::grid.arrange} 画到当前设备；
-#'   \code{FALSE} 时改为返回一个可组合的 \code{patchwork} 对象，供调用方与其它图
-#'   拼版（把 \code{grid.arrange} 的返回值交给 patchwork 不会报错但会被静默丢弃，
-#'   因此拼接场景请用 \code{draw = FALSE}）。
-#' @return \code{draw = TRUE} 时不可见返回 \code{NULL}（图已画出）；
-#'   \code{draw = FALSE} 时返回 \code{patchwork} 对象。
+#' @title Grid of per-cohort Kaplan-Meier panels
+#' @description Splits a \code{\link{cpas_km_pooled}} result back into one
+#' Kaplan-Meier panel per dataset (each cohort split at its own median) and lays
+#' them out as a grid.
+#' @param km An object returned by \code{\link{cpas_km_pooled}}.
+#' @param ncol Number of columns in the grid.
+#' @param draw \code{TRUE} (default) draws the grid on the current device with
+#'   \code{gridExtra::grid.arrange}; \code{FALSE} returns a composable
+#'   \code{patchwork} object instead, so the caller can combine it with other
+#'   figures (passing the return value of \code{grid.arrange} to patchwork does
+#'   not error but is silently dropped, which is why the composed case needs
+#'   \code{draw = FALSE}).
+#' @return Invisibly \code{NULL} when \code{draw = TRUE} (the figure has been
+#'   drawn); a \code{patchwork} object when \code{draw = FALSE}.
 #' @export
 plot_cpas_km_perdataset <- function(km, ncol = 4, draw = TRUE) {
   df <- km$df

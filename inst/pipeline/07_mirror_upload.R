@@ -57,7 +57,7 @@ con <- dbConnect(MySQL(), host=db$host, dbname=db$dbname, user=db$user,
                  password=db$password, client_flag=CLIENT_COMPRESS)
 on.exit(dbDisconnect(con))
 
-info <- read.csv("data/dataset_info.csv", stringsAsFactors=FALSE)
+info <- read.csv(cpas_data("dataset_info.csv"), stringsAsFactors=FALSE)
 row <- info[info$Accession == ACC, ]
 if (!nrow(row)) row <- info[info$Accession == gsub("_", "-", ACC), ]
 if (!nrow(row)) stop("Accession not in dataset_info.csv: ", ACC)
@@ -160,10 +160,36 @@ run_09_update_db_surv <- function() {
 # TCGA-* 及本地无对应表者跳过(写入日志)。
 # 输出: pipeline/out/db_surv_update_log.csv + REPORT_db_surv_update.md
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressPackageStartupMessages(library(RMySQL))
 root <- "/home/Jingle/data/Project/CPAS"
 sdir <- file.path(root, "data/processed/surv")
-outd <- file.path(root, "pipeline/out")
+outd <- cpas_out_root()
 files <- list.files(sdir, pattern = "_surv\\.rds$", full.names = TRUE)
 
 con <- dbConnect(MySQL(), host = "139.224.80.159", dbname = "cpas",
@@ -268,6 +294,32 @@ run_13_upload_small_cohorts <- function() {
 # 输出: DB 表 + pipeline/out/db_upload_small_cohorts_log.csv
 # 用法: Rscript pipeline/R/13_upload_small_cohorts.R [--dry-run]
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressPackageStartupMessages(library(RMySQL))
 
 root <- "/home/Jingle/data/Project/CPAS"
@@ -354,7 +406,7 @@ for (i in seq_len(nrow(targets))) {
 }
 
 res <- do.call(rbind, log_rows)
-out_csv <- file.path(root, "pipeline/out/db_upload_small_cohorts_log.csv")
+out_csv <- cpas_out("db_upload_small_cohorts_log.csv")
 utils::write.csv(res, out_csv, row.names = FALSE)
 cat("\n=== upload summary ===\n"); print(res, row.names = FALSE)
 cat("\nlog:", out_csv, "\n")
@@ -389,6 +441,32 @@ run_24_make_tables_writable <- function() {
 #   （--only <表名> 可只处理一张）
 # 输出：pipeline/out/REPORT_tables_writable.md
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 .libPaths(c("/home/Jingle/R/library", .libPaths()))
 suppressPackageStartupMessages(library(RMySQL))
 
@@ -430,12 +508,12 @@ note(paste0("  扫描 ", length(tb), " 张表，只读 ", length(targets), " 张
             if (length(targets)) paste(targets, collapse = ", ") else "（无）"))
 
 if (!apply_db || !length(targets)) {
-  dir.create("pipeline/out", showWarnings = FALSE)
+  dir.create(cpas_out_root(), showWarnings = FALSE)
   writeLines(c("# 只读表检测 / 修复", "",
                paste0("- 时间: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
                paste0("- 模式: ", if (apply_db) "--apply" else "dry-run"),
                "", "```text", log_lines, "```", ""),
-             "pipeline/out/REPORT_tables_writable.md")
+             cpas_out("REPORT_tables_writable.md"))
   if (!apply_db) note("\n[dry-run] 未做修改。加 --apply 执行换表。")
   quit(save = "no")
 }
@@ -473,12 +551,12 @@ for (t in targets) {
   note(sprintf("  %-16s 完成：CHECKSUM %s 不变 | 现在可写=%s", t, before, writable))
 }
 
-dir.create("pipeline/out", showWarnings = FALSE)
+dir.create(cpas_out_root(), showWarnings = FALSE)
 writeLines(c("# 只读表检测 / 修复", "",
              paste0("- 时间: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
              paste0("- 模式: ", if (apply_db) "--apply" else "dry-run"),
              "", "```text", log_lines, "```", ""),
-           "pipeline/out/REPORT_tables_writable.md")
+           cpas_out("REPORT_tables_writable.md"))
 note("\n已写出 pipeline/out/REPORT_tables_writable.md")
 }
 
@@ -557,6 +635,32 @@ run_99_extend_gpl_db <- function() {
 #   Rscript pipeline/R/99_extend_gpl_db.R [ROOT] --write [GPL ...]    # 追加
 # 输出: pipeline/out/gpl_db_extend_log.csv
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressPackageStartupMessages({ library(RMySQL); library(stringr) })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -603,7 +707,7 @@ for (gpl in GPLS) {
 }
 out <- do.call(rbind, log_rows)
 if (!is.null(out)) {
-  write.csv(out, file.path(ROOT, "pipeline/out/gpl_db_extend_log.csv"), row.names = FALSE)
+  write.csv(out, cpas_out("gpl_db_extend_log.csv"), row.names = FALSE)
   cat("\n=== 99 GPL DB extend summary ===\n"); print(out, row.names = FALSE)
 }
 }

@@ -5,10 +5,10 @@
 \alias{dataset_info}
 \title{CanPAS dataset catalog}
 \format{
-A data.frame with 26 columns. \code{Accession}, \code{Type}, \code{GPL},
-\code{N}, \code{SurvivalTypes} (raw endpoint tokens) and the endpoint-family
-mapping added by the analysis plan B: \code{EndpointFamilies} (browsing
-families), \code{EP_OS}, \code{EP_DSS}, \code{EP_DFS}, \code{EP_PFS},
+A data.frame with 32 columns. \code{Accession}, \code{Type},
+\code{GPL}, \code{N}, \code{SurvivalTypes} (raw endpoint tokens) and the
+endpoint-family mapping added by the analysis plan B: \code{EndpointFamilies}
+(browsing families), \code{EP_OS}, \code{EP_DSS}, \code{EP_DFS}, \code{EP_PFS},
 \code{EP_MFS} (the concrete token available for each pooling family),
 \code{EndpointPrimary} and \code{EndpointDerived} (TCGA-derived DFI/PFI).
 
@@ -40,22 +40,39 @@ Two columns describe how a cohort may be used:
 \describe{
   \item{\code{CohortGroup}}{Label of the group of cohorts that share
     patients (same study on another platform, or the same series deposited
-    twice). \code{NA} when the cohort does not overlap any other.
+    twice); 33 of the 197 rows carry a label and the rest are \code{NA}.
     Computed by \code{pipeline/R/26_cohort_overlap.R} from sample titles.}
-  \item{\code{Note}}{Human-readable flag: the overlapping partners and how
-    many patients are shared (\code{"OVERLAPS ... do not pool together"}), or
-    \code{"expression only — no survival table, cannot be analysed"}, or
-    \code{"no annotated endpoint"}. The App shows it on the Datasets page and
-    warns on the multi-dataset pages when an overlapping pair is selected.}
+  \item{\code{Note}}{Free-text provenance and use flag for the cohort,
+    written by the curation pipeline. 120 of the 197 rows carry no note and
+    are stored as the literal \code{NA}; the other 77 are ASCII prose. A
+    note records whichever of the following applies, in the pipeline's own
+    wording: the platform and the probe-to-gene coverage of the expression
+    table (\code{GPL...}; \code{probes->genes: ... n/m non-control = p\%});
+    the sample and event accounting behind \code{N} and \code{n_events},
+    with paired or replicate designs marked as such because they
+    double-count patients; how the endpoint was derived (time unit, status
+    coding, audit or patient-level check); an overlap group
+    (\code{OVERLAPS ...}, \code{SAME SERIES on another platform - do not
+    pool together ...}, or \code{TITLE COLLISION (not a shared-patient
+    group)}); the registration batch date (\code{... batch 2026-09-24});
+    and \code{[!]} where the note raises a caveat the user should read. The
+    two rows whose \code{n_convention} is \code{clinical-record}
+    (\code{GSE325123}, \code{GSE31312}) additionally state the
+    expression-join-restricted \code{N}/\code{n_events} pair in a
+    \code{[n_convention=clinical-record: ...]} clause, and
+    \code{pipeline/R/16_verify_catalog_mirror.R} treats those two rows as
+    documented convention exceptions, not rule violations. The App shows the
+    note on the Datasets page and warns on the multi-dataset pages when an
+    overlapping pair is selected.}
 }
 
 Two bookkeeping columns are not used by the analysis functions:
 \describe{
   \item{\code{X}}{Row index carried over from the pre-removal catalog (values
-    1–209, 193 distinct). Harmless residue; kept so the packaged table stays
+    1-213, 197 distinct). Harmless residue; kept so the packaged table stays
     cell-identical to \code{data/dataset_info.csv}.}
   \item{\code{method}}{Assay / data type recorded for the cohort:
-    \code{"RNA"} (134), \code{"TCGA-RNAseq"} (31), \code{"RNA-seq"} (9),
+    \code{"RNA"} (136), \code{"TCGA-RNAseq"} (33), \code{"RNA-seq"} (9),
     \code{"array"} (1), \code{"SRA"} (1), and \code{NA} for the 17
     lung-cancer GEO cohorts whose method was not recorded.}
 }
@@ -67,12 +84,12 @@ listed as 133 while 226 tumours are analysable).
 dataset_info
 }
 \description{
-One row per cohort in the CanPAS catalog — 193 rows: 143 GEO
+One row per cohort in the CanPAS catalog - 197 rows: 147 GEO
 series, 14 EMBL-EBI cohorts (ArrayExpress/BioStudies), 31 TCGA projects,
 3 CGGA glioma cohorts and 2 cBioPortal-hosted studies (\code{A5-PCPG},
-\code{IMmotion150}) — with the accession, platform
-(GPL), cancer type and the endpoint / sample-size columns described below. Used
-by \code{\link{get_expr_data}} to find the platform of a dataset.
+\code{IMmotion150}) - with the accession, platform (GPL),
+cancer type and the endpoint / sample-size columns described below. Used by
+\code{\link{get_expr_data}} to find the platform of a dataset.
 }
 \examples{
   ## The catalog is the starting point of every real analysis: it records the

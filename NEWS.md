@@ -4,6 +4,246 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## Five features and three consistency fixes (2026-09-30)
+
+### B1 - blinded endpoint adjudication: `endpoint_adjudication()` + `endpoint_agreement()`
+
+* `endpoint_adjudication(n = 80, raters = 2, seed = ..., families = NULL,
+  drop_absent = FALSE, path = NULL, table = NULL)` draws a stratified sample of
+  cohort-endpoint records from `endpoint_semantics()` - stratified by endpoint
+  family and by source (the accession prefix: GEO / TCGA / EMBL-EBI / CGGA /
+  other), proportional allocation with largest-remainder rounding, capped at each
+  stratum's size - and returns a **blinded** rating sheet (class
+  `cpas_adjudication_sheet`): `record_id`, `cohort`, `token`, `evidence` and one
+  empty column `rater<r>_<field>` per rater and judgement field
+  (`event_definition`, `time_origin`, `censoring_rule`, `competing_events`,
+  `pooling_class`). The family assignment, the pooling class and the four
+  semantic fields are withheld, so a rater cannot anchor on the verdict under
+  review. `record_id` is assigned to the whole table in catalog order *before*
+  filtering and sampling, so a record keeps its id across `n`, `seed`, family /
+  absent filters and rater counts. The pooling-class vocabulary the raters must
+  use is on `attr(x, "pooling_class_vocabulary")`; `path` also writes the sheet
+  as CSV with empty cells.
+* `endpoint_agreement(sheet, fields = )` scores a filled sheet and returns the
+  record count, per-field raw agreement, **Cohen's kappa** per field with a
+  Landis-and-Koch interpretation label, the overall pooled agreement, the
+  adjudication rate (records whose raters disagree / records with a comparable
+  rating) and a data frame of the disagreeing records (which fields, who said
+  what). Missing ratings reduce `n_compared` instead of biasing the estimate; a
+  field whose only shared category makes chance agreement 1 reports `kappa = NA`
+  with a note rather than `NaN`; with more than two raters every rater pair is
+  scored and the field's kappa is the **mean of the pairwise kappas**, which
+  `$kappa_basis` and `$notes` state explicitly.
+* Cohen's kappa is implemented in the package with base R only - **no new
+  dependency**. It is hand-checked in the test suite against a 2x2 table with a
+  known kappa (`po = 0.70`, `pe = 0.50`, `kappa = 0.40`) and a 3x3 table
+  (`po = 0.80`, `pe = 0.36`, `kappa = 0.6875`).
+* A worked example with a small **synthesised** ratings frame (no real study
+  result is reported) is in the `endpoint_agreement()` help page and in the
+  "Checking the annotation itself" section of the endpoints-and-pooling vignette.
+
+### B5 - per-cohort expression diagnostics: `batch_diagnostics()` + `plot_batch_diagnostics()`
+
+* `batch_diagnostics(datasets, genes, type = "OS", top_pct = 25, merged = NULL,
+  process_duplicates = "max", max_try = 3)` reports, per cohort and gene, `n`,
+  `n_missing`, `median`, `q1`, `q3`, `iqr`, `min`, `max`, `mean`, `sd`, the
+  **median-split cut-point** (`cut_median`) and the **percentile cut-point**
+  (`cut_top_pct`, the cohort's `(100 - top_pct)`th percentile) exactly as
+  `cpas_km_pooled()` computes them, the High/Low counts for both rules, and the
+  cohort median on the within-cohort standardised scale (`median_z`), plus
+  `$batch` (the cross-cohort spread per gene), `$cohorts`, the per-sample
+  `$values` the plot uses, `$errors` and `$manifest`.
+* It documents explicitly, in the help page, the README and the result's
+  manifest notes, that multi-cohort pooling works on **within-cohort standardised
+  effect sizes** (two-stage meta-analysis, so a constant cross-platform shift
+  cancels inside each cohort) and that pooled Kaplan-Meier uses **within-cohort
+  percentile cut-points**, which is why absolute cross-platform expression
+  differences do not enter the pooled estimate.
+* Cohorts are read through the existing accessors and caches
+  (`cohort_merged()` -> `get_expr_data()` / `merge_surv_expr()` / `get_data()` /
+  `tcga_surv_table()`), so a previously fetched cohort is analysed offline;
+  `merged =` skips retrieval entirely (used by the tests).
+* `plot_batch_diagnostics(x, genes = NULL, show_cut_points = TRUE, free_y = FALSE)`
+  draws the per-cohort distributions side by side on one shared axis (one facet
+  per gene) with the median-split (solid) and percentile (dashed) cut-points
+  marked.
+
+### B6 - prediction-interval rule: `pi_method = c("t", "normal", "HK")`
+
+* `cpas_meta(pi_method = )` replaces the previously hard-coded primary /
+  alternative pair: `"t"` (default) is the documented `t(k-2)` construction,
+  `"normal"` is the normal approximation and `"HK"` is the Hartung-Knapp-based
+  interval (the HK-adjusted standard error of the pooled estimate with `t(k-1)`).
+  The rule used is recorded in `$pooled$pi_method`, `$pooled$pi_rule`,
+  `$input$pi_method` and `$manifest$pi_method`; the other construction is kept
+  beside it, clearly labelled, in `$pooled$pi_alt_lower/upper` and
+  `$pooled$pi_alt_rule`. `pi_method` is surfaced in `cpas_meta_panel()` and in
+  the per-gene table (`pi_lower`/`pi_upper` plus `pi_alt_lower`/`pi_alt_upper`).
+  Only the prediction interval changes: the pooled HR, its confidence interval,
+  tau^2, I^2 and the p-value are identical for every `pi_method`.
+* `"t"` needs at least 3 cohorts, `"normal"` and `"HK"` at least 2, so a
+  two-cohort pool reports NA for the default and a finite normal/HK interval
+  rather than a `NaN`.
+* Lung pool (16 cohorts, OS, FOXM1, RE-pooled from the frozen merged caches):
+  the default `t(k-2)` interval is [0.821, 1.829] under REML and
+  [0.8212, 1.8288] under DL - the latter reproducing the frozen figure exactly -
+  `normal` gives [0.850, 1.767] (REML) / [0.8500, 1.7668] (DL) and `HK` gives
+  [0.823, 1.826] (REML) / [0.8228, 1.8252] (DL). The pooled HR is 1.2254
+  (1.1025-1.3620) in every case.
+
+### B7 - reproducibility index: `cpas_reproducibility_index()` + `cpas_pipeline_steps()`
+
+* `cpas_pipeline_steps()` returns the **67 curation steps** (canonical run order,
+  step id, original script name, what the step does, whether it is a numbered
+  construction/repair step - 58 - or a helper/demo/validation script - 9, and the
+  consolidated `inst/pipeline/` file that provides it), resolved with
+  `system.file()` and cross-checked against the shipped entry point's own step
+  table (`matches_entry_point`).
+* `cpas_reproducibility_index()` returns one tidy data frame over the whole
+  material: the 67 steps plus 14 material rows - the **exclusion register (109
+  records)** and the other three registers, the repair/defect records (the
+  1.0.0 verified-defect report, the known-defect report, the read-only-table
+  repair log, the competing-risks re-audit), the frozen-state records and the
+  Additional-file layout - with `records`, `location`, the in-package
+  `package_path` / `installed_path` / `available` and the `resolved_source` path
+  under `CPAS_DATA_ROOT`. It is an index, not a data dump: two shipped CSVs under
+  `inst/reproducibility/` (both under 20 KB), no catalog and no mirror access.
+
+### B10 - three consistency fixes
+
+* **(a)** `cpas_meta_panel()`'s pooling method now defaults to **REML**, matching
+  `cpas_meta()` (it previously defaulted to DL, so two calls with the same
+  arguments disagreed); the man page and the panel's own documentation say so,
+  and `method = "DL"` still reproduces the earlier panel tables exactly.
+* **(b)** the `not estimable` result object now carries a **top-level
+  `auto_repair`** field, consistent with `$manifest$auto_repair` (new field, also
+  shown by `as.data.frame(cpas_manifest(x))`) and with
+  `$input_params$auto_repair`; previously the fail-safe could only be inferred
+  from the manifest notes.
+* **(c)** `inst/pipeline/README.md` no longer claims "270 definitions": it states
+  the verified figure - **491 one-level function definitions, 0 altered** - and
+  the counting rule used (every `name <- function(...)` binding at the top level
+  of a script or one nesting level inside it, i.e. every binding a single
+  `source()` materialises; definitions created only inside another function body
+  are excluded), with the top-level count (268) and the any-depth count (513)
+  recorded for contrast.
+
+## Statistical defaults hardened: REML, the fail-safe and an analysis manifest (2026-09-30)
+
+The meta-analysis default, the behaviour of a model that cannot be estimated as requested,
+and the disclosure of what a run actually did, all change in this round. Every change is
+opt-in reversible and every change is recorded in the result.
+
+### `cpas_meta()`: `method = c("REML", "DL", "HK", "FE")`, default `"REML"`
+
+* `"REML"` (new default) estimates tau^2 by restricted maximum likelihood, by bisection on
+  the REML score equation; `"DL"` is DerSimonian-Laird, the previous default, kept for
+  continuity (`"RE"` is still accepted as a synonym of `"DL"`); `"HK"` is the
+  Hartung-Knapp-Sidik-Jonkman adjusted variance of the pooled estimate on top of the REML
+  tau^2, with its t(k-1) interval; `"FE"` is the fixed-effect model.
+* Validated against `metafor` 5.0.1 on 40 random effect-size tables: `"DL"` agrees exactly;
+  `"REML"` agrees to <= 6.5e-6 in tau^2 and <= 5.1e-6 in the pooled log-HR (metafor stops on
+  a very flat REML likelihood - the package's estimate satisfies the REML score equation to
+  1e-8 and gives the same REML log-likelihood); `"HK"` agrees to <= 4.7e-6 in the SE, the
+  interval and the p-value. Note that metafor 5.0.1 does not accept `method = "HK"`: the
+  Knapp-Hartung adjustment there is `test = "knha"`, which is what the test suite compares
+  against.
+* **Before/after on the paper's lung pool** (16 cohorts, OS, `run/CanPAS-tool-paper`): for
+  FOXM1 the DL estimate is HR 1.2254 (1.1026-1.3619), p = 1.61e-04, tau^2 = 0.03194,
+  I^2 = 0.748; REML gives HR 1.2254 (1.1025-1.3620), p = 1.63e-04, tau^2 = 0.03199; HK gives
+  HR 1.2254 (1.0905-1.3771), p = 2.08e-03. For the 0.5*FOXM1+0.5*GAPDH signature DL gives
+  HR 1.2718 (1.1440-1.4139), p = 8.6e-06, tau^2 = 0.03264; REML HR 1.2717 (1.1463-1.4108),
+  p = 5.68e-06, tau^2 = 0.03087; HK HR 1.2717 (1.1343-1.4257), p = 4.39e-04. The published
+  DL numbers are therefore reproduced exactly by `method = "DL"`.
+
+### Prediction interval: primary + clearly labelled alternative
+
+* The primary interval stays the documented t(k-2) construction
+  (`$pooled$pi_lower`/`pi_upper`, `$pooled$pi_rule`); a normal-approximation interval is
+  returned beside it as `$pooled$pi_alt_lower`/`pi_alt_upper` (`$pooled$pi_alt_rule`) so a
+  paper can report both.
+
+### Fail-safe instead of silent repair: `auto_repair = FALSE` by default
+
+* `COX_analysis(method = "multi")` no longer repairs a non-estimable model by default. It
+  returns an explicit **not estimable** result (class `cpas_not_estimable`, also `cpas_COX`)
+  with an empty `models` list, `status = "not estimable"`, `estimable = FALSE`, the
+  reason(s) in `$reasons`, the offending term(s) in `$offending_terms`, and what the repair
+  *would* have changed in `$metadata$would_have_dropped`. It is a value, not an exception,
+  so no `tryCatch()` is needed.
+* `auto_repair = TRUE` restores the previous behaviour and records every modification in
+  `$metadata$dropped_covariates`, `$metadata$drop_notes` and
+  `$manifest$dropped_covariates`. The old argument name `drop_nonestimable` still works and
+  warns.
+* `COX_screen_adjust(auto_repair = )` passes the setting through and, on a refusal, still
+  returns the univariable table with `multi_estimable = FALSE`, `multi_reasons` and
+  `multi_offending_terms`.
+* `cpas_meta()` reports a cohort whose requested confounders cannot be co-estimated as
+  `not estimable` in `$not_estimable`/`$excluded` instead of quietly adjusting for a reduced
+  covariate set; `auto_repair = TRUE` restores the old behaviour and records what it
+  dropped in `$modifications`.
+* The Shiny COX page gains an explicit control for this (default "Refuse and report"), and
+  its status line states the setting in force.
+
+### Analysis manifest on every result
+
+* `cpas_manifest(result)` (and `result$manifest`) returns a `cpas_manifest` object holding
+  the cohort(s), the endpoint family and the resolved token of every cohort, the pooling
+  classes pooled, the selection rule, the rows and covariates dropped with reasons, the
+  cut-point rule and the number of cut-points searched, the search-adjusted p-value when one
+  was computed, the `cox.zph` result, the meta-analysis method, tau^2, I^2, both prediction
+  intervals, the R and package versions, and the timestamp. It prints as an aligned block
+  and converts with `as.data.frame()` to a two-column `field`/`value` table. Manifests are
+  attached to `cpas_meta`, `COX_analysis`, `COX_screen_adjust`, `cpas_km_pooled`,
+  `cpas_meta_panel`, `COX_by_genes` and `COX_by_datasets` results.
+
+### Endpoint semantics and pooling classes (A1)
+
+* `endpoint_semantics(accession =, family =)` returns the shipped companion table
+  `inst/extdata/endpoint_semantics.csv` (one row per cohort x endpoint family, 985 rows for
+  the 197 catalogued cohorts), a byte-identical copy of the curation pipeline's
+  `data/endpoint_semantics.csv`.
+* `endpoint_pooling_class(accession, family)` returns one cell of it:
+  `"Exact-equivalent"`, `"Clinically-related"`, `"Not-poolable"`, `"Unknown"` or
+  `"Absent"`. `"Absent"` means the cohort has no endpoint of that family at all - the
+  absence of an endpoint, deliberately **not** a pooling verdict, and never a candidate for
+  pooling. Where the companion table spells such a cell `"Not-poolable"` with no token, the
+  accessor reports `"Absent"`.
+* `cpas_meta(pooling = c("family", "exact"))`: `"family"` is the documented default and
+  pools Exact-equivalent + Clinically-related rows (today's behaviour, and what makes the
+  cross-token DFS pool of 98 cohorts possible); `"exact"` pools only Exact-equivalent rows
+  and records every cohort it leaves out in `$excluded`. **Deliberate deviation**: the
+  reviewer asked for exact-only as the default; that would drop the DFS pool from 98 to the
+  ~20 cohorts whose token is literally DFS and remove the tool's central cross-token claim,
+  so the strict mode is implemented, documented and reported rather than silently made the
+  default. Every result records `$pooled$pooling`, `$pooled$pooling_classes`,
+  `$per_dataset$pooling_class` and `$manifest$pooling_table`.
+* If the companion table is not present in a build, both functions fall back to the
+  package's documented token -> family map and `endpoint_semantics()` errors with the
+  pipeline step that regenerates the file.
+
+### Shared-patient overlap (A6)
+
+* `cohort_overlap()` returns the shipped register `inst/extdata/cohort_overlap.csv` (the 30
+  pairs / 14 groups; `AccessionA`, `AccessionB`, `SharedPatients`, `Basis`, `Evidence`), a
+  byte-identical copy of the curation pipeline's `data/suppl/cohort_overlap.csv`.
+* `cpas_meta(overlap = c("warn", "refuse", "dedupe"))`: `"warn"` (default) proceeds, warns
+  and records the offending pairs in `$pooled$overlap_pairs` (a list column) and in
+  `$overlap_pairs`; `"refuse"` stops with an error naming the pairs; `"dedupe"` keeps one
+  member of every overlapping group - the larger cohort, ties by accession sort - and records
+  every drop in `$excluded` and `$manifest$overlap_dropped`. `"refuse"` and `"dedupe"`
+  refuse to run when the register is not shipped, rather than pretending the check was made.
+
+### Documentation
+
+* The five `man/` pages that were still in Chinese (`cpas_meta`, `plot_meta_forest`,
+  `loo_meta`, `cpas_km_pooled`, `plot_cpas_km_perdataset`) are now in English, regenerated
+  from their roxygen source with every argument documented. No behaviour changed.
+* Two offline vignettes: `CanPAS-getting-started` and `endpoints-and-pooling`; an
+  `inst/CITATION`; and a `_pkgdown.yml` reference index.
+* `README.md` documents the new defaults, and the app's Methods/Help/status text surfaces
+  them.
+
 ## The curation pipeline now ships inside the package (`inst/pipeline/`, scripts only) (2026-09-30)
 
 The scripted pipeline that builds and maintains the curated mirror is now part of the

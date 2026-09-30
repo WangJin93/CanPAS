@@ -2,24 +2,28 @@
 % Please edit documentation in R/cpas_meta.R
 \name{plot_cpas_km_perdataset}
 \alias{plot_cpas_km_perdataset}
-\title{各队列 KM 小图网格（每个队列内中位分组的独立 KM）}
+\title{Grid of per-cohort Kaplan-Meier panels}
 \usage{
 plot_cpas_km_perdataset(km, ncol = 4, draw = TRUE)
 }
 \arguments{
-\item{km}{一个 \code{cpas_km_pooled} 对象。}
+\item{km}{An object returned by \code{\link{cpas_km_pooled}}.}
 
-\item{ncol}{网格列数。}
+\item{ncol}{Number of columns in the grid.}
 
-\item{draw}{\code{TRUE}（默认）立即用 \code{gridExtra::grid.arrange} 画到当前设备；
-\code{FALSE} 时改为返回一个可组合的 \code{patchwork} 对象，供调用方与其它图
-拼版（把 \code{grid.arrange} 的返回值交给 patchwork 不会报错但会被静默丢弃，
-因此拼接场景请用 \code{draw = FALSE}）。}
+\item{draw}{\code{TRUE} (default) draws the grid on the current device with
+\code{gridExtra::grid.arrange}; \code{FALSE} returns a composable
+\code{patchwork} object instead, so the caller can combine it with other
+figures (passing the return value of \code{grid.arrange} to patchwork does
+not error but is silently dropped, which is why the composed case needs
+\code{draw = FALSE}).}
 }
 \value{
-\code{draw = TRUE} 时不可见返回 \code{NULL}（图已画出）；
-  \code{draw = FALSE} 时返回 \code{patchwork} 对象。
+Invisibly \code{NULL} when \code{draw = TRUE} (the figure has been
+  drawn); a \code{patchwork} object when \code{draw = FALSE}.
 }
 \description{
-将 \code{\link{cpas_km_pooled}} 结果按数据集拆分为独立的 KM 小图并排布为网格。
+Splits a \code{\link{cpas_km_pooled}} result back into one
+Kaplan-Meier panel per dataset (each cohort split at its own median) and lays
+them out as a grid.
 }

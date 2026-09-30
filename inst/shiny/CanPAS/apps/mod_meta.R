@@ -37,7 +37,22 @@ ui_mod_meta <- function(id) {
                   value = "TP53, GAPDH, TNS1, PTEN")),
       hr(),
       h5("Pooling", class = "section-title"),
-      selectInput(ns("mmet"), .lab("Pooling", "RE = random effects (default), FE = fixed effect."), choices = c("RE", "FE"), selected = "RE"),
+      selectInput(ns("mmet"), .lab("Pooling",
+                     paste0("REML = restricted maximum likelihood for tau^2 (default); ",
+                            "DL = DerSimonian-Laird, the earlier estimator (\"RE\" is its synonym); ",
+                            "HK = Hartung-Knapp-Sidik-Jonkman adjusted variance on top of the REML tau^2, ",
+                            "with its wider t(k-1) interval; FE = fixed effect.")),
+                  choices = c("REML", "DL", "HK", "FE"), selected = "REML"),
+      selectInput(ns("mpool"), .lab("Pooling class",
+                     paste0("family (documented default) pools Exact-equivalent AND Clinically-related rows of the ",
+                            "family, which is what allows a cross-token pool (e.g. RFS under DFS); ",
+                            "exact pools only the cohorts whose token IS the family definition.")),
+                  choices = c("family", "exact"), selected = "family"),
+      selectInput(ns("movl"), .lab("Shared-patient overlap",
+                     paste0("warn (default) proceeds, names the overlapping pair(s) and records them; ",
+                            "refuse stops with an error; dedupe keeps the larger cohort of every ",
+                            "overlapping group and records what it dropped.")),
+                  choices = c("warn", "refuse", "dedupe"), selected = "warn"),
       numericInput(ns("mmin"), .lab("Min events", "Cohorts with fewer events than this are left out of the pooling, so a single tiny cohort cannot drive the result."), value = 5, min = 1),
       selectizeInput(ns("mclin"), .lab("Adjust for", "Optional: adjust for these covariates inside each cohort first, then pool the adjusted hazard ratios (the column must exist in that cohort)."),
                      choices = NULL, multiple = TRUE,
@@ -141,7 +156,7 @@ server_mod_meta <- function(id, rv, dataset_info) {
           if (length(accs) < 2) stop("Please select at least two datasets.")
           if (!length(genes)) stop("Please provide at least one gene symbol.")
           res <- cpas_meta_panel(datasets = accs, genes = genes, type = fam,
-                                 method = input$mmet %||% "RE",
+                                 method = input$mmet %||% "DL",
                                  confounders = conf, min_events = input$mmin %||% 5)
           list(res = res, accs = accs, family = fam, error = NULL)
         }, error = function(e) list(error = conditionMessage(e)))
@@ -154,7 +169,9 @@ server_mod_meta <- function(id, rv, dataset_info) {
       loc$meta <- tryCatch({
         b <- .multi_bundle(session, catalog, accs, fam, spec, min_n = 2)
         res <- cpas_meta(datasets = names(b$merged), marker = "marker", type = b$family,
-                         method = input$mmet %||% "RE", confounders = conf,
+                         method = input$mmet %||% "REML", confounders = conf,
+                         pooling = input$mpool %||% "family",
+                         overlap = input$movl %||% "warn",
                          min_events = input$mmin %||% 5, merged = b$merged)
         list(res = res, failed = b$failed, family = b$family, spec = spec)
       }, error = function(e) list(error = conditionMessage(e)))

@@ -23,7 +23,8 @@ cox_stub_df <- function(n = 200, seed = 42) {
              marker = x, age = age, age2 = x, stringsAsFactors = FALSE)
 }
 
-run_cox_app <- function(expr, df = cox_stub_df(), clin = c("age", "age2")) {
+run_cox_app <- function(expr, df = cox_stub_df(), clin = c("age", "age2"),
+                        multi_failsafe = "refuse") {
   skip_if_not(cox_app_ready(), "shiny app files unavailable")
   # the assertions must be evaluated inside testServer's environment (where
   # input/output/session live), not in this function's frame
@@ -44,7 +45,8 @@ run_cox_app <- function(expr, df = cox_stub_df(), clin = c("age", "age2")) {
   testServer(get("server_mod_cox", envir = env),
              args = list(id = "cox", rv = rv, dataset_info = CanPAS::dataset_info), {
     session$setInputs(kind = "gene", gene = "MARKER", ref = "__all__", rule = "max",
-                      show_all = FALSE, clin = clin, p_thr = 0.05)
+                      show_all = FALSE, clin = clin, p_thr = 0.05,
+                      multi_failsafe = multi_failsafe)
     session$setInputs(go = 1)
     session$setInputs(go = 2)
     eval(expr_q, envir = environment())
@@ -53,8 +55,28 @@ run_cox_app <- function(expr, df = cox_stub_df(), clin = c("age", "age2")) {
 
 plain <- function(x) gsub("<[^>]*>", " ", paste(as.character(x), collapse = " "))
 
-test_that("a multivariable model reduced to one covariate still plots and explains", {
+# The package default is the fail-safe (auto_repair = FALSE): the page must say
+# that no model was fitted and why, and must not present a repaired model. The
+# repair itself is still available and is what the next test asks for.
+test_that("by default the page refuses a non-estimable multivariable model and says why", {
   run_cox_app({
+    st <- plain(output$status)
+    expect_match(st, "NOT ESTIMABLE", fixed = TRUE)
+    expect_match(st, "auto_repair")
+    note <- plain(output$multi_note)
+    expect_match(note, "could not be estimated", fixed = TRUE)
+    expect_match(note, "age2")
+    # the univariable output stays intact, and no multivariable panel is drawn
+    expect_false(is.null(output$tbl_uni))
+    expect_false(is.null(output$forest_uni))
+    # no model, so the multivariable table carries no data (DT serialises an
+    # empty table as {"x":null}) and the panel carries the message instead
+    expect_match(as.character(output$tbl_multi), '\"x\":null', fixed = TRUE)
+  })
+})
+
+test_that("a multivariable model reduced to one covariate still plots and explains", {
+  run_cox_app(multi_failsafe = "repair", {
     st <- plain(output$status)
     expect_match(st, "reduced", ignore.case = TRUE)          # flagged in the status line
     expect_match(st, "NOT adjusted for confounding", fixed = TRUE)

@@ -224,3 +224,79 @@
   }
   NA_character_
 }
+
+# Explicit "not estimable" result -------------------------------------------
+# The fail-safe of the Cox / multivariable paths (auto_repair = FALSE). Rather
+# than silently repairing a model (dropping covariates, merging levels or
+# excluding patients) the analysis returns this object: it carries the reason(s)
+# and the offending terms, has an EMPTY models list, and states the status in
+# print(). It keeps the cpas_COX class so existing callers and tests that expect
+# a cpas_COX result still match, and adds cpas_not_estimable so that
+# print()/as.data.frame() can present it as a refusal rather than a fit.
+.cpas_not_estimable <- function(df_name = NA_character_, type = NULL,
+                                method = NULL, precision = 3L,
+                                processed_data = NULL, cont = character(0),
+                                cate = character(0), all_vars = character(0),
+                                kept = character(0), reasons = character(0),
+                                offending_terms = character(0), screen = NULL,
+                                n_complete = NA_integer_, n_supplied = NA_integer_,
+                                analysis = "COX_analysis",
+                                auto_repair = FALSE) {
+  empty_tab <- data.frame(Var1 = character(0), Variates = character(0),
+                          Level = character(0), Type = character(0),
+                          HR = numeric(0), HR95L = numeric(0), HR95H = numeric(0),
+                          Pvalue = numeric(0), N = integer(0),
+                          HR_text = character(0), P_text = character(0),
+                          stringsAsFactors = FALSE)
+  drops <- if (is.null(screen) || !nrow(screen))
+    .cpas_empty_df(c("variable", "detail", "reason")) else screen
+  manifest <- .cpas_manifest_new(
+    analysis = analysis,
+    cohorts = if (is.na(df_name)) character(0) else df_name,
+    selection_rule = sprintf("multivariable model requested with %d covariate(s); the model is NOT estimable without modification, so no model was returned",
+                             length(all_vars)),
+    dropped_covariates = if (nrow(drops))
+      data.frame(cohort = df_name, variable = drops$variable, detail = drops$detail,
+                 reason = drops$reason, stringsAsFactors = FALSE) else NULL,
+    meta_method = if (is.null(method)) NA_character_ else method,
+    auto_repair = isTRUE(auto_repair),
+    cut_rule = "not applicable (Cox model on a continuous marker; no cut-point is searched)",
+    notes = c("auto_repair = FALSE (fail-safe): the model was refused instead of being repaired",
+              reasons))
+  out <- list(
+    input_params = list(df_name = df_name, type = type,
+                        cont_Variates = cont, cate_Variates = cate,
+                        method = method, precision = precision,
+                        auto_repair = isTRUE(auto_repair), analysis_time = Sys.time()),
+    processed_data = processed_data,
+    models = list(),
+    summaries = list(),
+    results_table = empty_tab,
+    metadata = list(sample_size = nrow(processed_data), events = NA_integer_,
+                    complete_cases = n_complete, events_in_model = NA_integer_,
+                    skipped_variables = character(0),
+                    dropped_covariates = if (nrow(drops)) drops else
+                      .cpas_empty_df(c("variable", "detail", "reason")),
+                    drop_notes = if (nrow(drops))
+                      paste0(drops$variable, ": ", drops$reason) else character(0),
+                    final_covariates = kept, reduced = FALSE,
+                    reduced_note = character(0),
+                    ph_test = NULL, cont_vars = cont, cate_vars = cate,
+                    analysis_type = "Multivariate COX (not estimable)",
+                    survival_type = type,
+                    status = "not estimable", estimable = FALSE,
+                    not_estimable = TRUE, reasons = reasons,
+                    offending_terms = offending_terms,
+                    would_have_dropped = drops),
+    status = "not estimable",
+    estimable = FALSE,
+    # top-level auto_repair, consistent with $manifest$auto_repair and with the
+    # manifest note that records the fail-safe: a coercion of this object to a
+    # plain result must not look like a repaired model (spec B10b)
+    auto_repair = isTRUE(auto_repair),
+    reasons = reasons,
+    offending_terms = offending_terms,
+    manifest = manifest)
+  class(out) <- c("cpas_not_estimable", "cpas_COX")
+  out
+}

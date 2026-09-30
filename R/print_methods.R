@@ -58,6 +58,52 @@ print.cpas_COX_by_genes <- function(x, ...) {
   invisible(x)
 }
 
+#' @title Print Method for cpas_not_estimable Class
+#' @description Prints a fail-safe refusal: the multivariable model was not
+#' estimable exactly as requested and was therefore not fitted. The reasons and
+#' the offending terms are printed, together with what the automatic repair
+#' would have changed (\code{auto_repair = TRUE}).
+#' @param x An object of class \code{cpas_not_estimable} (also a
+#'   \code{cpas_COX} object).
+#' @param ... Additional arguments passed to print.
+#' @return Invisibly returns \code{x}.
+#' @export
+#' @examples
+#' \dontrun{
+#'    ## A covariate that cannot be co-estimated: the model is refused, with
+#'    ## reasons, instead of being repaired (the package default).
+#'    d <- cohort_merged("GSE13507", "GAPDH", type = "OS", clin = TRUE)
+#'    d$flat <- 1
+#'    r <- COX_analysis(d, type = "OS", cont_Variates = c("GAPDH", "flat"),
+#'                      method = "multi")
+#'    r$estimable            # FALSE
+#'    r$offending_terms      # "flat"
+#'    print(r)
+#' }
+print.cpas_not_estimable <- function(x, ...) {
+  cat("\nCOX Regression Analysis: NOT ESTIMABLE\n")
+  cat("======================================\n")
+  cat(sprintf("\n- Analysis Type: %s", x$metadata$analysis_type))
+  cat(sprintf("\n- Survival Type: %s", x$metadata$survival_type))
+  cat(sprintf("\n- Sample Size: %d", x$metadata$sample_size))
+  cat(sprintf("\n- auto_repair: %s", isTRUE(x$input_params$auto_repair)))
+  cat("\n- Models fitted: 0 (the model was refused, not repaired)")
+  if (length(x$offending_terms))
+    cat(sprintf("\n- Offending term(s): %s", paste(x$offending_terms, collapse = ", ")))
+  cat("\n\nReasons:\n")
+  for (r in x$reasons) cat("  - ", r, "\n", sep = "")
+  wd <- x$metadata$would_have_dropped
+  if (!is.null(wd) && nrow(wd)) {
+    cat("\nWhat auto_repair = TRUE would have changed:\n")
+    for (i in seq_len(nrow(wd)))
+      cat(sprintf("  - %s [%s]: %s\n", wd$variable[i], wd$detail[i], wd$reason[i]))
+  }
+  cat("\nRemove or combine the offending covariate(s), or pass auto_repair = TRUE ",
+      "to fit the repaired model and record every modification.\n", sep = "")
+  cat("======================================\n")
+  invisible(x)
+}
+
 #' @title Print Method for cpas_COX Class
 #' @description Custom print method for the result object returned by COX_analysis function.
 #' @param x An object of class cpas_COX.

@@ -17,6 +17,19 @@ What it adds to the usual single-cohort workflow:
 * **Five statistical safeguards on by default.** Cut-point rule and threshold,
   events-per-variable warning, proportional-hazards test, counted excluded rows, and
   the resolved endpoint token are printed with every result rather than on request.
+* **REML by default, with DL and HK beside it.** `cpas_meta(method = )` estimates
+  tau^2 by restricted maximum likelihood (`"REML"`, the default), DerSimonian-Laird
+  (`"DL"`, the previous default, kept for continuity) or Hartung-Knapp-Sidik-Jonkman
+  (`"HK"`); both prediction intervals are always returned.
+* **Fail-safe rather than silent repair.** `auto_repair = FALSE` is the default in the
+  Cox / multivariable paths: a model that would need a covariate dropped, a level merged
+  or patients excluded is reported as `not estimable` with its reasons and offending
+  terms instead of being quietly reduced.
+* **An analysis manifest for every result.** `cpas_manifest(result)` (also
+  `result$manifest`) records the cohorts, the resolved token of each, the pooling classes
+  pooled, what was dropped and why, the cut-point rule, the meta-analysis method, tau^2,
+  I^2, both prediction intervals, the versions and the timestamp - printable and
+  convertible with `as.data.frame()`.
 * **Numerical verification against reference implementations** (`survival`, `metafor`,
   `cmprsk`), including a competing-risks variance defect that the comparison exposed
   and this release corrects.
@@ -28,7 +41,7 @@ What it adds to the usual single-cohort workflow:
 > aftercare intervention, so it is now the "Cancer Prognosis Analysis Suite" (the
 > acronym is unchanged).
 
-**Status**: version 1.0.0 (first release) · licence GPL-3 · `R CMD check`
+**Status**: version 1.0.0 (first release) · licence MIT · `R CMD check`
 0 errors / 0 warnings / 1 note (host library notice) · a tool paper is in preparation.
 
 ## Installation
@@ -100,10 +113,31 @@ endpoint_resolve("GSE31210", "DFS")   # -> "RFS": the token that cohort provides
 plot_km(m$merged_data, type = "DFS", marker = "GAPDH")
 
 ## --- cross-cohort two-stage meta-analysis ----------------------------------
+## method = "REML" is the default; "DL" reproduces the earlier estimator and
+## "HK" gives the Hartung-Knapp-Sidik-Jonkman interval.
 res <- cpas_meta(datasets = c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS")
-res$per_dataset    # per-cohort HR, n, events and the endpoint token used
-res$pooled         # pooled HR, Q, I2, tau2 and the prediction interval
-loo_meta(res)      # leave-one-out sensitivity
+res$per_dataset    # per-cohort HR, n, events, resolved token and pooling class
+res$pooled         # pooled HR, Q, I2, tau2 and BOTH prediction intervals
+res$pooled$pi_lower; res$pooled$pi_alt_lower   # primary and alternative interval
+res$pooled$pi_method                           # the rule used ("t" by default)
+res$pooled$pi_rule                             # and how that interval is built
+## pi_method = "normal" or "HK" selects the other two rules; only the interval
+## changes, never the pooled estimate or the heterogeneity statistics
+cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS",
+          pi_method = "normal")$pooled$pi_lower
+res$pooled$pooling_classes                     # the classes actually pooled
+res$pooled$overlap_pairs                       # pairs known to share patients
+cpas_manifest(res)                             # every setting behind the number
+loo_meta(res)      # leave-one-out sensitivity (same pooling method)
+
+## strict mode: only cohorts whose token IS the DFS definition
+res_exact <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS",
+                       pooling = "exact")
+res_exact$per_dataset$pooling_class            # what was kept, and why
+
+## shared patients: warn (default), refuse, or keep the larger cohort
+cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS",
+          overlap = "dedupe")$excluded          # what dedupe dropped, and why
 
 ## --- pooled Kaplan-Meier with the two within-cohort cut rules ---------------
 merged <- lapply(c("GSE31210", "GSE37745"), function(a) cohort_merged(a, "GAPDH", type = "RFS"))
@@ -113,6 +147,24 @@ km$cutpoint                                  # the rule and the per-cohort thres
 km2 <- cpas_km_pooled(merged, marker = "GAPDH", type = "RFS",
                       cut = "top_pct", top_pct = 25)   # highest quarter of every cohort
 km2$empty_cohorts; km2$skipped_cohorts        # cohorts left out, with the reason
+
+## --- per-cohort expression diagnostics before pooling ----------------------
+bd <- batch_diagnostics(c("GSE31210", "GSE37745"), genes = "GAPDH", type = "RFS")
+bd$table[, c("dataset", "n", "median", "iqr", "cut_median", "cut_top_pct")]
+bd$batch            # how far apart the absolute expression scales are
+plot_batch_diagnostics(bd)   # the distributions side by side, cut-points marked
+
+## --- blinded endpoint adjudication -----------------------------------------
+## A rating sheet with the cohort, the token and the evidence text only.
+sheet <- endpoint_adjudication(n = 12, raters = 2, seed = 20260930)
+attr(sheet, "pooling_class_vocabulary")
+## ... the raters fill it in; then:
+endpoint_agreement(sheet)$per_field[, c("field", "raw_agreement", "kappa")]
+
+## --- reproducibility index (67 steps, registers, additional files) ---------
+idx <- cpas_reproducibility_index()
+table(idx$section)
+subset(idx, section == "curation_step")[, c("number", "script", "consolidated_file")]
 
 ## --- competing risks -------------------------------------------------------
 cr <- competing_risk_COX(df, time = "OS_time", status = "cause",
@@ -159,13 +211,26 @@ The size columns are not interchangeable, and one rule fixes all of them:
 
 `N` and `n_events` therefore describe one endpoint (the primary one), while `n_<family>`
 describes each family separately. The independence is real, not an artefact of a single row:
-across the 197-row catalog, `n_<family>` exceeds `N` in **7 cohort-by-family cells** — OS 1
-(`GSE70768` 57 > 41), DSS 0, DFS 1 (`GSE22226_GPL1708` 129 > 125), PFS 4 (`TCGA-BLCA`
-426 > 425, `TCGA-LUSC` 543 > 542, `TCGA-STAD` 445 > 443, `TCGA-SKCM` 456 > 455) and MFS 1
-(`GSE45255` 136 > 134). The clearest single-row witness is `GSE205209`: `N = 28`, `n_surv = 29`
-(the delivered survival table keeps the recruited patient with no usable array), `n_OS = 28`
-and `n_events = 21`, since the 29-row table carries 22 deaths but one of them is that
+across the 197-row catalog, `n_<family>` exceeds `N` in **6 cohort-by-family cells** — OS 0,
+DSS 0, DFS 1 (`GSE22226_GPL1708` 129 > 125), PFS 4 (`TCGA-BLCA` 426 > 425, `TCGA-LUSC`
+543 > 542, `TCGA-STAD` 445 > 443, `TCGA-SKCM` 456 > 455) and MFS 1 (`GSE45255` 136 > 134).
+The verifier therefore does **not** assert `n_<family> <= N`: these cells are legitimate.
+The clearest single-row witness is `GSE205209`: `N = 28`, `n_surv = 29` (the delivered
+survival table keeps the recruited patient with no usable array), `n_OS = 28` and
+`n_events = 21`, since the 29-row table carries 22 deaths but one of them is that
 non-analysable patient.
+
+Two rows are deliberately registered at the **audited clinical-record** level rather than at
+the join-restricted level, and say so in the `n_convention` column: `GSE325123`
+(`N = 105`, 62 events, versus 102/60 join-restricted) and `GSE31312` (`N = 475`, 172 events,
+versus 470/170). `19_fix_catalog_N.R` proposed changing these two to the join-restricted
+counts; that proposal was reviewed and **rejected**, so do not re-apply it. The remaining
+195 rows carry `n_convention = "join-restricted"`, and six further columns record the
+curation decisions: `n_join_dropped` and `join_drop_reason` (survival rows with a usable
+primary endpoint that have no expression row; non-zero for `GSE54460`, `GSE108474` and
+`GSE205209`), `admission_gate` and `gate_decision` (`>=30` for 16 rows and `>50` for 181;
+`author-decision` only for `GSE205209`), and `overlap_group` (33 rows carry a shared-patient
+group).
 
 **Which layer is authoritative:** the delivered local artefacts — the expression `.rds`
 under `data/expr/` and the survival tables under `data/processed/surv/` — are the source of
@@ -230,13 +295,46 @@ can show a PFS cohort count (66) larger than the pooling count (49).
 * **Events per variable.** Multivariable Cox models warn below 10 events per variable.
 * **Proportional hazards.** `COX_analysis()` returns the global `cox.zph` test; p < 0.05
   is flagged.
-* **Endpoint tokens.** Every result carries the resolved token; mixed-token pools warn.
+* **Endpoint tokens and pooling classes.** Every result carries the resolved token and
+  the pooling class of that token (`Exact-equivalent` when the token *is* the family's
+  canonical definition, `Clinically-related` when a different token is pooled into the
+  family by the documented rule, `Not-poolable`, `Unknown`, or `Absent` when the cohort
+  has no endpoint in that family at all - the absence of an endpoint, not a pooling
+  verdict). Mixed-token pools warn. `cpas_meta(pooling = )` chooses between the
+  documented default `"family"` (pool Exact-equivalent + Clinically-related, which is
+  what makes a cross-token DFS pool of 98 cohorts possible) and the strict `"exact"`
+  (Exact-equivalent only, which for DFS keeps the ~20 cohorts whose token is literally
+  DFS); either way the classes actually pooled are recorded on the result.
+* **Prediction intervals.** Three construction rules, selected by
+  `cpas_meta(pi_method = )`: `"t"` (the default, the documented and cited t(k-2)
+  construction), `"normal"` (the normal approximation) and `"HK"` (the
+  Hartung-Knapp-based interval, on the HK-adjusted standard error with t(k-1)).
+  The rule actually used is recorded in `$pooled$pi_method` and `$pooled$pi_rule`,
+  and the other construction is returned beside it as
+  `$pooled$pi_alt_lower/upper` so both can be reported. Only the interval changes:
+  the pooled HR, its confidence interval and the heterogeneity statistics are
+  identical whatever `pi_method` is.
+* **Batch effects across cohorts.** Multi-cohort pooling works on
+  **within-cohort standardised effect sizes** (a two-stage meta-analysis: each
+  cohort is fitted and standardised inside itself before pooling), and pooled
+  Kaplan-Meier splits each cohort at its **own percentile cut-point**. A constant
+  cross-platform shift in expression therefore does not enter the pooled estimate.
+  `batch_diagnostics()` reports the per-cohort distribution that both rules are
+  computed from (n, median, IQR, min/max, the median-split and percentile
+  cut-points used) and `plot_batch_diagnostics()` draws the cohorts side by side
+  on one axis.
+* **Shared-patient overlap.** `cohort_overlap()` returns the register of cohorts known to
+  share patients; `cpas_meta(overlap = )` can `"warn"` (default: proceed, name the pairs
+  and record them), `"refuse"` (stop with an actionable error) or `"dedupe"` (keep the
+  larger cohort of every overlapping group, deterministically, and record what it
+  dropped).
 * **Competing risks.** Only usable when the source data distinguish the cause of death;
   the mirrored GEO tables code non-disease death as censored.
-* **Not implemented.** Hartung–Knapp variance adjustment, time-varying covariates,
-  landmark/immortal-time correction, functional-form modelling, and inverse-
-  probability-of-censoring time-dependent ROC. Single-marker pages apply no
-  multiplicity control; gene panels are BH-adjusted.
+* **Not implemented.** Time-varying covariates, landmark/immortal-time correction,
+  functional-form modelling, and inverse-probability-of-censoring time-dependent ROC.
+  Single-marker pages apply no multiplicity control; gene panels are BH-adjusted.
+  (The Hartung-Knapp-Sidik-Jonkman variance adjustment is now implemented as
+  `cpas_meta(method = "HK")`.)
 
 ## The Shiny application
 
@@ -321,8 +419,9 @@ refers to; it is not a separate download.
   the 67 standalone step scripts the pipeline was originally run from.
 * Every original script is embedded **byte-for-byte** inside a zero-argument runner
   (`run_<script>()`), so `source()`-ing a file defines functions and has no side
-  effects, and each step still runs in its own process. All 270 function definitions
-  keep an identical deparsed body.
+  effects, and each step still runs in its own process. All **491 one-level function
+  definitions** keep an identical deparsed body (0 altered; counting rule in
+  `inst/pipeline/README.md`).
 * **No data files are added to the package.** The pipeline reads and writes an external
   data root (`CPAS_DATA_ROOT`, by default `/home/Jingle/data/Project/CPAS` on the
   authors' machine); the packaged TCGA tables under `inst/extdata/tcga/` are unrelated
@@ -340,13 +439,47 @@ run_07b_split_tnm()                                   # one step, as before
 Rscript "$(Rscript -e 'cat(system.file("pipeline","run_pipeline.R",package="CanPAS"))')" --list
 ```
 
+## Reproducibility index
+
+`cpas_reproducibility_index()` returns a tidy data frame indexing the
+reproducibility material: the **67 curation steps** (canonical order, original
+script name, what the step does, and the consolidated `inst/pipeline/` file that
+provides it), the **exclusion register** (109 records, with its location), the
+repair and defect records, the frozen-state record and the Additional-file
+layout. `cpas_pipeline_steps()` is the companion that returns just the 67 steps.
+Both read two small CSVs shipped in `inst/reproducibility/` and resolve the
+packaged files with `system.file()`, so they work offline from an installed
+package; the registers themselves stay in the project tree and are reported by
+count and location, never copied.
+
+```r
+idx <- cpas_reproducibility_index()
+table(idx$section)                                  # curation_step / register / ...
+subset(idx, section == "register", select = c("item", "records", "location"))
+```
+
+## Endpoint adjudication
+
+The endpoint annotation is our own reading of each deposit, so it is auditable:
+`endpoint_adjudication()` draws a stratified sample (by family and by source) of
+cohort-endpoint records and returns a **blinded** rating sheet - record id,
+cohort, token and evidence text only, with one empty column per judgement field
+and rater - and `endpoint_agreement()` scores the filled sheet: per-field raw
+agreement, Cohen's kappa with a Landis-and-Koch label, the overall pooled
+agreement, the adjudication rate and the records needing adjudication. Cohen's
+kappa is implemented in the package (base R only, no added dependency); with more
+than two raters the per-field kappa is the mean of the pairwise kappas, which the
+result states explicitly.
+
 ## Repository layout
 
 ```
-R/                  exported functions (37) and internal helpers
-man/                roxygen-generated help pages (50)
+R/                  exported functions (48) and internal helpers
+man/                roxygen-generated help pages (66)
 inst/shiny/CanPAS/  the bundled Shiny application (apps/, www/, HELP.md)
 inst/pipeline/      the curation pipeline, shipped as consolidated scripts (no data)
+inst/reproducibility/  the shipped index behind cpas_reproducibility_index() (two CSVs)
+inst/extdata/       endpoint semantics, cohort overlap and the TCGA clinical tables
 data/               dataset_info.rda (the catalog) and ID_map.rda
 tests/testthat/     regression tests
 NEWS.md             change log for 1.0.0

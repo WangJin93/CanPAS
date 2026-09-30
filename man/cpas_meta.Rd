@@ -2,55 +2,162 @@
 % Please edit documentation in R/cpas_meta.R
 \name{cpas_meta}
 \alias{cpas_meta}
-\title{两阶段跨队列整合（meta）分析}
+\title{Two-stage cross-cohort integrative (meta) analysis}
 \usage{
 cpas_meta(
   datasets,
   marker,
   type = "OS",
-  method = c("RE", "FE"),
+  method = c("REML", "DL", "HK", "FE"),
+  pi_method = c("t", "normal", "HK"),
   confounders = NULL,
   min_events = 5,
   max_try = 3,
-  merged = NULL
+  merged = NULL,
+  pooling = c("family", "exact"),
+  overlap = c("warn", "refuse", "dedupe"),
+  auto_repair = FALSE,
+  class_table = NULL,
+  overlap_table = NULL
 )
 }
 \arguments{
-\item{datasets}{字符向量：数据集 accession（与 dataset_info 的 Accession 一致）。}
+\item{datasets}{Character vector of dataset accessions (matching
+\code{dataset_info$Accession}).}
 
-\item{marker}{单基因符号（如 "TP53"）或签名公式字符串（如 "0.5*TP53+0.3*GAPDH"）。}
+\item{marker}{One gene symbol (e.g. \code{"TP53"}) or a signature formula
+string (e.g. \code{"0.5*TP53+0.3*GAPDH"}).}
 
-\item{type}{终点家族 (OS/DSS/DFS/PFS/MFS) 或原始终点 token (OS/DSS/DFS/RFS/PFS/MFS/DFI/PFI/DRFS/EFS…)。
-家族会按队列解析为具体 token (见 \code{\link{endpoint_resolve}}), 并在 per_dataset$endpoint 中记录。}
+\item{type}{Endpoint family (OS/DSS/DFS/PFS/MFS) or a raw endpoint token
+(OS/DSS/DFS/RFS/PFS/MFS/DFI/PFI/DRFS/EFS, ...). A family is resolved per
+cohort to the concrete token that cohort provides (see
+\code{\link{endpoint_resolve}}) and recorded in \code{per_dataset$endpoint}
+and in \code{per_dataset$pooling_class}.}
 
-\item{method}{"RE"（随机效应，默认）或 "FE"（固定效应）。}
+\item{method}{Pooling method: \code{"REML"} (default), \code{"DL"},
+\code{"HK"} or \code{"FE"}; \code{"RE"} is accepted as \code{"DL"}.}
 
-\item{confounders}{可选：多因素校正协变量名向量（须存在于 merged 数据，按队列可用集合取交集）。}
+\item{pi_method}{Construction rule of the 95\% prediction interval for a new
+cohort (spec B6): \code{"t"} (default) is the documented
+\eqn{\hat\mu \pm t_{0.975,k-2}\sqrt{se_{pooled}^2+\tau^2}} interval
+(needs at least 3 cohorts); \code{"normal"} is the normal approximation
+\eqn{\hat\mu \pm 1.96\sqrt{se_{pooled}^2+\tau^2}} (needs at least 2);
+\code{"HK"} uses the Hartung-Knapp-Sidik-Jonkman adjusted standard error of
+the pooled estimate with \eqn{t_{0.975,k-1}} (needs at least 2). The rule
+actually used is recorded in \code{$pooled$pi_method} and
+\code{$pooled$pi_rule}, and the other construction is returned beside it,
+clearly labelled, in \code{$pooled$pi_alt_lower}/\code{pi_alt_upper} with
+\code{$pooled$pi_alt_rule}. Only the prediction interval is affected:
+\code{pi_method} does not change the pooled HR, its confidence interval, or
+any heterogeneity statistic.}
 
-\item{min_events}{队列纳入最低事件数（默认 5）。}
+\item{confounders}{Optional character vector of covariate names to adjust for
+(they must exist in the merged data; the covariates available in each
+cohort are intersected). With the default \code{auto_repair = FALSE} a
+cohort in which a requested covariate is constant is reported as
+\code{not estimable} instead of being adjusted for a reduced covariate set.}
 
-\item{max_try}{每个队列取数失败时的重试次数（应对 API 抖动）。}
+\item{min_events}{Minimum number of events for a cohort to enter (default 5).}
 
-\item{merged}{可选：命名列表（队列名 -> 已 merge 好的数据框）。提供后不再联网取数。}
+\item{max_try}{Retries per cohort when fetching fails (API jitter).}
+
+\item{merged}{Optional named list (cohort name -> already merged data.frame).
+When supplied nothing is fetched from the network.}
+
+\item{pooling}{\code{"family"} (default) pools the Exact-equivalent and the
+Clinically-related rows of the endpoint family, i.e. the cohorts that
+contribute RFS/EFS/DFI to DFS, CSS/BCSS to DSS, PFI to PFS and DRFS to MFS
+as well as those whose token is the family itself. \code{"exact"} pools only
+rows whose pooling class is \code{Exact-equivalent}. Both modes are
+available because \code{"family"} is what makes the cross-token claim
+(the DFS pool would fall from 98 cohorts to the ~20 whose token is
+literally DFS); the mode actually used is recorded in
+\code{$pooled$pooling}, in \code{$per_dataset$pooling_class} and in
+\code{$manifest}.}
+
+\item{overlap}{What to do about cohort pairs known to share patients:
+\code{"warn"} (default) proceeds but warns and records the pairs in
+\code{$pooled$overlap_pairs}, \code{"refuse"} stops with an actionable
+error, \code{"dedupe"} keeps one member of each overlapping group (the
+larger cohort, ties by accession sort) and records what it dropped in
+\code{$excluded} and \code{$manifest$overlap_dropped}.}
+
+\item{auto_repair}{\code{FALSE} (default) is the fail-safe: a cohort whose
+model would need covariates dropped, levels merged or rows excluded is
+reported as \code{not estimable} with its reasons and offending terms in
+\code{$excluded}, and no model is returned for it. \code{TRUE} restores the
+previous behaviour (repair the model) and records every modification in
+\code{$modifications}.}
+
+\item{class_table}{Optional endpoint-semantics table (the frozen schema of
+\code{\link{endpoint_semantics}}) used instead of the shipped copy.}
+
+\item{overlap_table}{Optional shared-patient register (the frozen schema of
+\code{\link{cohort_overlap}}) used instead of the shipped copy.}
 }
 \value{
-class "cpas_meta" 列表：per_dataset、pooled、input、errors。
+A list of class \code{cpas_meta}:
+  \item{\code{per_dataset}:}{one row per pooled cohort with \code{dataset},
+    \code{endpoint} (the token used), \code{pooling_class}, \code{n},
+    \code{events}, \code{HR}, \code{lower}, \code{upper}, \code{logHR},
+    \code{se}, \code{p}}
+  \item{\code{pooled}:}{one row: the method used, \code{pi_method} (the
+    prediction-interval rule used), \code{k}, \code{HR},
+    \code{lower}, \code{upper}, \code{p}, \code{Q}, \code{df},
+    \code{p_heterogeneity}, \code{I2}, \code{tau2}, the primary prediction
+    interval \code{pi_lower}/\code{pi_upper} (by default t with k-2 df) and
+    the alternative interval \code{pi_alt_lower}/\code{pi_alt_upper} (by
+    default the normal approximation), plus \code{pooling},
+    \code{pooling_classes}, \code{overlap_pairs} and \code{overlap_mode}}
+  \item{\code{excluded}:}{cohorts that did not enter and why
+    (\code{cohort}, \code{stage}, \code{reason}); \code{stage = "model"} rows
+    are the fail-safe refusals}
+  \item{\code{modifications}:}{every modification \code{auto_repair = TRUE}
+    made (\code{cohort}, \code{variable}, \code{detail}, \code{reason})}
+  \item{\code{errors}, \code{input}, \code{manifest}:}{fetch/endpoint errors
+    per cohort, the echoed inputs, and the analysis manifest
+    (\code{\link{cpas_manifest}})}
 }
 \description{
-对同一癌种的多个队列执行两阶段整合分析：
-  阶段1 每队列 coxph(Surv(time,status) ~ marker) 得到 logHR ± SE；
-  阶段2 逆方差加权合并（固定 FE / 随机 RE: DerSimonian-Laird），
-        输出合并 HR(95%CI)、Z/p、异质性 Q/df/I²/tau²。
+Runs a two-stage integrative analysis over several cohorts of one cancer type:
+  stage 1 fits \code{coxph(Surv(time, status) ~ marker + confounders)} in every
+  cohort, giving log-HR +/- SE per cohort; stage 2 pools them by inverse
+  variance and reports the pooled HR (95\% CI), Z/p, the heterogeneity
+  statistics Q/df/I\eqn{^2}/tau\eqn{^2} and two prediction intervals.
+
+The pooling method is chosen by \code{method}: \code{"REML"} (default,
+iterative restricted maximum likelihood for tau\eqn{^2}), \code{"DL"}
+(DerSimonian-Laird, the previous default, kept for continuity), \code{"HK"}
+(Hartung-Knapp-Sidik-Jonkman adjusted variance of the pooled estimate, with
+its characteristic wider interval) or \code{"FE"} (fixed effect).
+\code{"RE"} is still accepted as a synonym of \code{"DL"}.
 }
 \examples{
 \dontrun{
    ## Real cohorts, real endpoint: each cohort contributes the DFS-family
    ## token it actually has, which the function resolves and reports.
    m <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS")
-   m$per_dataset[, c("dataset", "endpoint", "n", "events", "HR")]
+   m$per_dataset[, c("dataset", "endpoint", "pooling_class", "n", "events", "HR")]
    m$pooled
    plot_meta_forest(m)
-   loo_meta(m)          # leave-one-out sensitivity
+   loo_meta(m)               # leave-one-out sensitivity
+   cpas_manifest(m)          # what was pooled, and under which defaults
    print(m)
+
+   ## Strict mode: only cohorts whose token IS the family definition.
+   m2 <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53", type = "DFS",
+                   pooling = "exact")
+   m2$per_dataset$pooling_class
+
+   ## Prediction-interval rule (spec B6): the default t(k-2) interval, the
+   ## normal approximation, or the HK-based interval. The interval used is
+   ## recorded in $pooled$pi_method.
+   m_normal <- cpas_meta(c("GSE31210", "GSE37745"), marker = "TP53",
+                         type = "DFS", pi_method = "normal")
+   m_normal$pooled[, c("pi_method", "pi_lower", "pi_upper", "pi_alt_lower")]
 }
+}
+\seealso{
+\code{\link{endpoint_semantics}}, \code{\link{cohort_overlap}},
+  \code{\link{cpas_manifest}}
 }

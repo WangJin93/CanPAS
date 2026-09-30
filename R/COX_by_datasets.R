@@ -91,7 +91,21 @@ COX_by_datasets <- function(datasets, gene, type = "OS", precision = 3,
                     gene_analyzed = gene,
                     survival_type = type,
                     precision = precision),
-    errors = errors)
+    errors = errors,
+    manifest = .cpas_manifest_new(
+      analysis = "COX_by_datasets",
+      cohorts = names(individual_results),
+      family = endpoint_family(type),
+      token = as.character(type)[1],
+      selection_rule = sprintf(paste0("the same univariable Cox model for gene %s was fitted in each of the %d ",
+                                      "supplied cohort(s); %d succeeded and %d failed (reasons in $errors)"),
+                               gene, length(datasets), length(individual_results),
+                               length(errors)),
+      cut_rule = "not applicable (univariable Cox model on a continuous marker; no cut-point is searched)",
+      dropped_rows = if (length(errors)) data.frame(
+        cohort = names(errors), n_dropped = NA_integer_, reason = unlist(errors),
+        stringsAsFactors = FALSE) else NULL,
+      notes = "per-cohort p-values are adjusted for multiplicity with BH in $combined_results$P_adj"))
   class(result_obj) <- "cpas_COX_by_datasets"
   result_obj
 }

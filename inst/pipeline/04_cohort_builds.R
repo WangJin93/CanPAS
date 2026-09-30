@@ -85,6 +85,32 @@ run_95_build_suppl_expansion <- function() {
 #
 # 用法: Rscript pipeline/R/95_build_suppl_expansion.R [ROOT]
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({
   library(data.table)
   library(dplyr)
@@ -95,7 +121,7 @@ ROOT <- if (length(args) >= 1) args[1] else "/home/Jingle/data/Project/CPAS"
 ROOT <- path.expand(ROOT); setwd(ROOT)
 
 SUPPL <- file.path(ROOT, "data/suppl")
-OUT   <- file.path(ROOT, "pipeline/out")
+OUT   <- cpas_out_root()
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 GPL_NAME <- "RNAseq_gene_PLAT"
 
@@ -425,6 +451,32 @@ run_96_build_suppl_expansion <- function() {
 #
 # 用法: Rscript pipeline/R/96_build_suppl_expansion.R [ROOT]
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({ library(data.table) })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -713,7 +765,7 @@ add_log(acc = acc, type = "Testicular Cancer", gpl = gpl, token = tok, n_expr = 
         detail = "GSE3218-GPL96 adult male GCT (RMA); clinical from PMC4666461 (PLoS One 2015 PMID 26624623) S1 Table, join on [0-9]{3}[A-Z] token of !Sample_title; the other 34 clinical rows are the GSE10783 validation arm (<50 patients, not registered). 2y DFS / 5y DSS are milestone binaries -> not used")
 
 res <- do.call(rbind, log_rows)
-write.csv(res, file.path(ROOT, "pipeline/out/suppl_expansion_build_log.csv"), row.names = FALSE)
+write.csv(res, cpas_out("suppl_expansion_build_log.csv"), row.names = FALSE)
 cat("\n=== 96 build summary ===\n"); print(res, row.names = FALSE)
 }
 
@@ -740,6 +792,32 @@ run_100_build_relaxed_gate <- function() {
 #
 # 用法: Rscript pipeline/R/100_build_relaxed_gate.R [ROOT]
 # ----------------------------------------------------------------------------
+# --- explicit output root (A10) ------------------------------------------------
+# Derived outputs are written under an explicit, env-overridable root
+# (CPAS_OUT_ROOT, default <CPAS_DATA_ROOT>/pipeline/out).  See pipeline/OUTPUT_LAYOUT.md.
+# Uses the shared helper when it is present and falls back to identical local
+# definitions otherwise (so a consolidated / installed copy is self-contained).
+# With the default root every path below resolves exactly where it did before:
+# this makes the location explicit and overridable, it changes no computation.
+.cpas_helper <- file.path(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"),
+                          "pipeline/R/00_output_root.R")
+if (file.exists(.cpas_helper)) source(.cpas_helper)
+if (!exists("cpas_out", mode = "function")) {
+  .cpas_root <- function() {
+    r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+    if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+    path.expand(r)
+  }
+  cpas_root <- .cpas_root
+  cpas_out_root <- function() {
+    o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+    if (nzchar(o)) path.expand(o) else file.path(.cpas_root(), "pipeline", "out")
+  }
+  cpas_out <- function(...) file.path(cpas_out_root(), ...)
+  cpas_data <- function(...) file.path(.cpas_root(), "data", ...)
+  cpas_suppl <- function(...) file.path(.cpas_root(), "data", "suppl", ...)
+}
+
 suppressMessages({ library(data.table) })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -938,9 +1016,9 @@ add_log(acc = acc, type = "Thyroid Cancer", gpl = gpl, token = tok,
         detail = sprintf("GSE76039 expression (MSK PDTC/ATC JCI 2016) + cBioPortal thyroid_mskcc_2016 clinical; join title==SAMPLE_ID, cross-checked by CEL token==OTHER_SAMPLE_ID (37/37); %d/%d usable OS; gate relaxed to >=30",
                          n_ok, ncol(ex)))
 
-saveRDS(log_rows, file.path(ROOT, "pipeline/out/relaxed_gate_build_log.rds"))
+saveRDS(log_rows, cpas_out("relaxed_gate_build_log.rds"))
 lg <- do.call(rbind, log_rows)
-write.csv(lg, file.path(ROOT, "pipeline/out/relaxed_gate_build_log.csv"), row.names = FALSE)
+write.csv(lg, cpas_out("relaxed_gate_build_log.csv"), row.names = FALSE)
 cat("\n--- build log ---\n"); print(lg[, c("acc", "type", "token", "n_expr", "N_patients", "n_events", "scale")], row.names = FALSE)
 cat("OK\n")
 }

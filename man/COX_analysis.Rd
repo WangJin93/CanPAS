@@ -13,7 +13,8 @@ COX_analysis(
   precision = 3,
   min_level_n = 5L,
   min_covariates = 2L,
-  drop_nonestimable = TRUE
+  drop_nonestimable = NULL,
+  auto_repair = FALSE
 )
 }
 \arguments{
@@ -52,15 +53,26 @@ analysis can be inspected, but \code{metadata$reduced} is \code{TRUE} and
 others could not be co-estimated. Default \code{2}. Only a model with no
 estimable covariate at all is refused.}
 
-\item{drop_nonestimable}{Logical. If \code{TRUE} (default) a non-estimable
-multivariable model is repaired instead of being refused: constant or nearly
-constant covariates and perfectly separated or very rare levels are screened
-out first, covariates that still keep the joint model from converging are
-then removed one at a time (or, when the offender cannot be isolated, by
-trying each removal in turn, down to a single covariate). Every decision is
-reported in \code{metadata$dropped_covariates} and
-\code{metadata$drop_notes}. If \code{FALSE} the model is fitted on the raw
-complete cases and an error is raised when it is not estimable.}
+\item{drop_nonestimable}{Deprecated. The old name of \code{auto_repair};
+when supplied it sets \code{auto_repair} (and warns). Use
+\code{auto_repair} instead.}
+
+\item{auto_repair}{Logical. \code{FALSE} (the default, and the fail-safe) is
+the new behaviour: a multivariable model that would need covariates dropped,
+levels merged or patients excluded is \strong{not} fitted. The function
+returns an explicit \code{not estimable} result instead - class
+\code{cpas_not_estimable} (also carrying \code{cpas_COX}), with an empty
+\code{models} list, \code{status = "not estimable"}, the reason(s) in
+\code{$reasons} and the offending term(s) in \code{$offending_terms}, plus
+what the repair \emph{would} have done in
+\code{$metadata$would_have_dropped}. \code{TRUE} restores the previous
+behaviour: constant or nearly constant covariates and perfectly separated or
+very rare levels are screened out first, covariates that still keep the joint
+model from converging are then removed one at a time (or, when the offender
+cannot be isolated, by trying each removal in turn, down to a single
+covariate), and every modification is recorded in
+\code{metadata$dropped_covariates}, \code{metadata$drop_notes} and the
+analysis manifest.}
 }
 \value{
 List of class \code{cpas_COX}:
@@ -77,7 +89,18 @@ List of class \code{cpas_COX}:
     models, \code{dropped_covariates} and \code{drop_notes} describing every
     covariate that the automatic repair removed and why, plus
     \code{final_covariates}, \code{reduced} and \code{reduced_note} which
-    flag a model that had to be reduced below \code{min_covariates}}
+    flag a model that had to be reduced below \code{min_covariates};
+    \code{estimable} and \code{status} state whether a model was produced at
+    all}
+  \item{\code{manifest}:}{the analysis manifest
+    (\code{\link{cpas_manifest}}): covariates, rows and covariates dropped
+    with reasons, the proportional-hazards check, the versions and the
+    timestamp}
+  \item{\code{reasons}, \code{offending_terms}, \code{estimable}, \code{status}:}{
+    present on every result; for a fail-safe refusal (\code{auto_repair =
+    FALSE}) they carry the reason(s) and the offending term(s) and
+    \code{estimable} is \code{FALSE}, which is how a caller detects the
+    refusal without a \code{tryCatch()}}
 }
 \description{
 Fits Cox proportional-hazards models on a data.frame of survival plus
@@ -91,6 +114,13 @@ is the reference (no row is printed for it); header rows carry
 \code{HR = NA} and are intended for plot annotations. Univariate models are
 estimated on the complete cases of \code{(time, status, variable)};
 multivariate models on the complete cases of all covariates together.
+
+The default is the fail-safe: \code{auto_repair = FALSE}. A multivariable
+model that is not estimable exactly as requested comes back as an object that
+says so (\code{estimable = FALSE}, \code{status = "not estimable"}, with the
+reasons and the offending terms) rather than as a quietly reduced model. This
+is a deliberate change of default; \code{auto_repair = TRUE} restores the
+automatic repair described next and records every modification.
 
 A multivariable model can fail not because the data are unusable but because
 one covariate is: a constant or nearly constant continuous covariate, a

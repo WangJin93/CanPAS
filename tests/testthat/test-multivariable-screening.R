@@ -1,7 +1,11 @@
 # The multivariable Cox model must not publish meaningless coefficients, but
 # refusing the whole model leaves the user without a result or a reason. These
-# tests pin the middle course: locate the offending covariates, drop / merge /
-# exclude only what is necessary, fit the rest, and record why.
+# tests pin the middle course, which is now opt-in: locate the offending
+# covariates, drop / merge / exclude only what is necessary, fit the rest, and
+# record why. The package default is the OPPOSITE (auto_repair = FALSE, the
+# fail-safe): the model is refused with its reasons and no model is fitted. Every
+# call below therefore asks for the repair explicitly, and test-hardening.R pins
+# the fail-safe default.
 
 # categorical covariates contribute a header row whose HR is NA by design
 est_hr <- function(r) {
@@ -25,7 +29,7 @@ sim_multi <- function(n = 400, seed = 1) {
 test_that("an estimable multivariable model is fitted unchanged", {
   d <- sim_multi()
   r <- COX_analysis(d, type = "OS", cont_Variates = c("marker", "age"),
-                    cate_Variates = c("grade", "N"), method = "multi")
+                    cate_Variates = c("grade", "N"), method = "multi", auto_repair = TRUE)
   expect_s3_class(r, "cpas_COX")
   expect_equal(nrow(r$metadata$dropped_covariates), 0L)
   expect_true(all(is.finite(est_hr(r))))
@@ -35,7 +39,7 @@ test_that("a constant covariate is dropped with a reason", {
   d <- sim_multi()
   d$flat <- 1
   r <- COX_analysis(d, type = "OS", cont_Variates = c("marker", "age", "flat"),
-                    cate_Variates = "N", method = "multi")
+                    cate_Variates = "N", method = "multi", auto_repair = TRUE)
   dc <- r$metadata$dropped_covariates
   expect_true("flat" %in% dc$variable)
   expect_match(dc$reason[dc$variable == "flat"], "constant")
@@ -50,7 +54,7 @@ test_that("a level with one patient is handled and the covariate survives", {
   d$N <- factor(lv, levels = c("N0", "N1", "N3"))
   d$OS_status[1] <- 1
   r <- COX_analysis(d, type = "OS", cont_Variates = "marker",
-                    cate_Variates = "N", method = "multi")
+                    cate_Variates = "N", method = "multi", auto_repair = TRUE)
   dc <- r$metadata$dropped_covariates
   expect_true(any(dc$variable == "N"))
   expect_match(dc$reason[dc$variable == "N"], "fewer than 5 patients|excluded|Other")
@@ -66,7 +70,7 @@ test_that("a level in which every patient has an event does not break the model"
   d$N <- factor(lv, levels = c("N0", "N1", "N3"))
   d$OS_status[1:6] <- 1              # all events in that level
   r <- COX_analysis(d, type = "OS", cont_Variates = "marker",
-                    cate_Variates = "N", method = "multi")
+                    cate_Variates = "N", method = "multi", auto_repair = TRUE)
   expect_s3_class(r, "cpas_COX")
   expect_true(all(is.finite(est_hr(r))))
   expect_true(max(abs(est_hr(r)), na.rm = TRUE) < 1e6)
@@ -77,7 +81,7 @@ test_that("collinear covariates are reduced to an estimable model", {
   d <- sim_multi()
   d$age2 <- d$age * 1.0000001         # numerically collinear with age
   r <- tryCatch(COX_analysis(d, type = "OS", cont_Variates = c("marker", "age", "age2"),
-                             cate_Variates = "N", method = "multi"),
+                             cate_Variates = "N", method = "multi", auto_repair = TRUE),
                 error = function(e) e)
   if (inherits(r, "error")) {
     expect_match(conditionMessage(r), "not estimable")
@@ -92,7 +96,7 @@ test_that("perfect separation of the marker drops the marker and keeps the rest"
   d$marker <- as.numeric(d$OS_status)          # marker == event indicator
   d$OS_time <- ifelse(d$OS_status == 1, 0.1, 1)
   r <- tryCatch(suppressWarnings(COX_analysis(d, type = "OS",
-              cont_Variates = c("marker", "age"), method = "multi")),
+              cont_Variates = c("marker", "age"), method = "multi", auto_repair = TRUE)),
                 error = function(e) e)
   if (inherits(r, "error")) {
     # acceptable only when nothing at all is estimable
@@ -113,7 +117,7 @@ test_that("a pair that cannot be co-estimated is reduced and flagged, not refuse
   d$marker_copy <- d$marker
   expect_warning(
     r <- COX_analysis(d, type = "OS", cont_Variates = c("marker", "marker_copy"),
-                      method = "multi"),
+                      method = "multi", auto_repair = TRUE),
     "reduced")
   expect_s3_class(r, "cpas_COX")
   expect_true(isTRUE(r$metadata$reduced))
@@ -132,7 +136,7 @@ test_that("min_covariates = 2 reduces and flags instead of erroring", {
   d <- sim_multi(n = 200, seed = 5)
   d$age_copy <- d$age
   r <- suppressWarnings(COX_analysis(d, type = "OS", cont_Variates = c("age", "age_copy"),
-                                     method = "multi", min_covariates = 2L))
+                                     method = "multi", min_covariates = 2L, auto_repair = TRUE))
   expect_s3_class(r, "cpas_COX")
   expect_true(isTRUE(r$metadata$reduced))
   expect_length(r$metadata$final_covariates, 1L)
@@ -146,7 +150,7 @@ test_that("the failure message lists the covariates already handled", {
   d <- sim_multi(n = 120, seed = 6)
   d$a <- as.numeric(d$OS_status); d$b <- d$a; d$c <- d$a
   r <- tryCatch(suppressWarnings(COX_analysis(d, type = "OS",
-              cont_Variates = c("a", "b", "c"), method = "multi")),
+              cont_Variates = c("a", "b", "c"), method = "multi", auto_repair = TRUE)),
                 error = function(e) e)
   expect_s3_class(r, "error")
   expect_match(conditionMessage(r), "not estimable")
@@ -157,7 +161,7 @@ test_that("COX_screen_adjust reports a reduced multivariate model", {
   d$marker_copy <- d$marker          # both significant, but the same variable
   r <- suppressMessages(suppressWarnings(
     COX_screen_adjust(d, type = "OS", cont_Variates = c("marker", "marker_copy"),
-                      cate_Variates = NULL, p.threshold = 0.05)))
+                      cate_Variates = NULL, p.threshold = 0.05, auto_repair = TRUE)))
   expect_true(isTRUE(r$multi_metadata$reduced))
   expect_length(r$multi_metadata$final_covariates, 1L)
   expect_true(nrow(r$multi_table) >= 1L)
@@ -175,7 +179,7 @@ test_that("the printed summary table is a three-line table", {
   d <- sim_multi(n = 300, seed = 12)
   r <- suppressMessages(suppressWarnings(
     COX_screen_adjust(d, type = "OS", cont_Variates = c("marker", "age"),
-                      cate_Variates = c("grade", "N"), p.threshold = 0.05)))
+                      cate_Variates = c("grade", "N"), p.threshold = 0.05, auto_repair = TRUE)))
   expect_s3_class(r$print_result, "flextable")
   html <- as.character(flextable::htmltools_value(r$print_result))
   # collect every border that is actually drawn (width > 0) and require exactly

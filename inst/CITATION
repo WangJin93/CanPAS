@@ -1,0 +1,9 @@
+bibentry(
+  bibtype  = "Manual",
+  title    = "CanPAS: Cancer Prognosis Analysis Suite",
+  author   = person("Jin", "Wang", email = "Jinwang93@suda.edu.cn"),
+  year     = "2026",
+  note     = "R package version 1.0.0",
+  textVersion = paste("Wang J. (2026). CanPAS: Cancer Prognosis Analysis Suite.",
+                      "R package version 1.0.0.")
+)

@@ -121,20 +121,51 @@ ui_mod_methods <- function(id) {
           tags$li(tags$b("Proportional hazards."), " The multivariable Cox output includes a
                   ", tags$code("cox.zph"), " GLOBAL test; a p below 0.05 is printed together with a
                   caution that the HRs should be interpreted with care."),
-          tags$li(tags$b("Endpoint tokens."), " Analysis is requested by family and the token each
-                  cohort contributes is always reported. When cohorts inside one family contribute
-                  different tokens (for example RFS and DFI under DFS) the pooling function warns and
-                  the per-cohort token stays in the result table."),
+          tags$li(tags$b("Endpoint tokens and pooling classes."), " Analysis is requested by family
+                  and the token each cohort contributes is always reported. Every cohort x family cell
+                  also carries a pooling class: ", tags$code("Exact-equivalent"), " when the token IS
+                  the family's canonical definition, ", tags$code("Clinically-related"), " when a
+                  different token is pooled into the family by the documented rule (RFS/EFS/DFI under
+                  DFS, CSS/BCSS under DSS, PFI under PFS, DRFS under MFS), ",
+                  tags$code("Not-poolable"), ", ", tags$code("Unknown"), ", or ",
+                  tags$code("Absent"), " when the cohort has no endpoint of that family at all - the
+                  absence of an endpoint, not a pooling verdict. When cohorts inside one family
+                  contribute different tokens the pooling function warns and the per-cohort token and
+                  class stay in the result table. ", tags$code('cpas_meta(pooling = "exact")'),
+                  " keeps only the Exact-equivalent rows (the strict reading); the documented default ",
+                  tags$code('pooling = "family"'), " also pools the Clinically-related ones, which is
+                  what makes a cross-token DFS pool of 98 cohorts possible."),
+          tags$li(tags$b("Pooling method (meta-analysis)."), " ", tags$code('method = "REML"'),
+                  " (default) estimates the between-cohort variance by restricted maximum likelihood;
+                  ", tags$code('"DL"'), " is the DerSimonian-Laird estimator used previously and is kept
+                  for continuity (", tags$code('"RE"'), " is accepted as its synonym), ",
+                  tags$code('"HK"'), " applies the Hartung-Knapp-Sidik-Jonkman adjustment on top of the
+                  REML variance and its t(k-1) interval, and ", tags$code('"FE"'),
+                  " is the fixed-effect model. Both prediction intervals are reported: the primary
+                  t(k-2) construction and a normal approximation."),
+          tags$li(tags$b("Fail-safe multivariable models."), " ", tags$code("auto_repair = FALSE"),
+                  " is the default: a multivariable model that would need a covariate dropped, a level
+                  merged or patients excluded is ", tags$b("refused"), " with its reasons and the
+                  offending term reported, instead of being silently reduced. Choose ",
+                  tags$code("auto_repair = TRUE"), " (the COX page's 'If a covariate cannot be co-estimated' control) to fit the repaired model; every modification is then recorded and shown."),
+          tags$li(tags$b("Analysis manifest."), " Every analysis result carries a ",
+                  tags$code("$manifest"), " (", tags$code("cpas_manifest(result)"),
+                  ") recording the cohorts, the resolved token of each, the pooling classes pooled,
+                  the selection rule, the rows and covariates dropped with reasons, the cut-point rule
+                  and the number of cut-points searched, the search-adjusted p-value when one was
+                  computed, the ", tags$code("cox.zph"), " result, the meta-analysis method, tau^2,
+                  I^2, both prediction intervals, the R/package versions and the timestamp. It prints
+                  and converts with ", tags$code("as.data.frame()"), "."),
           tags$li(tags$b("Sample sizes."), " The reported n is the number of rows that actually
                   entered the model; rows removed for a missing endpoint time/status or a missing
                   marker are counted and printed."),
           tags$li(tags$b("Landmarks beyond follow-up."), " A landmark later than a cohort's longest
                   follow-up carries that cohort's last observed S(t) forward, and the number of
                   contributing cohorts (k) is reported for every landmark."),
-          tags$li(tags$b("Not implemented."), " Competing-risks models (Fine-Gray), time-varying
-                  covariates, landmark/immortal-time corrections, multiple-testing correction for
-                  gene panels and prediction-interval reporting in the meta-analysis are not
-                  provided; treat panel-level p-values as screening results."))
+          tags$li(tags$b("Not implemented."), " Competing-risks models (Fine-Gray) are not exposed
+                  on this page; time-varying covariates, landmark/immortal-time corrections and
+                  inverse-probability-of-censoring time-dependent ROC are not provided. Gene-panel
+                  p-values are BH-adjusted and should still be treated as screening results."))
       ),
       .methods_card(
         "5b · Cohorts that share patients",
@@ -155,8 +186,14 @@ ui_mod_methods <- function(id) {
           of double counting. The catalog records the group in ", tags$code("CohortGroup"),
           " and a readable flag in ", tags$code("Note"), "; the Datasets page shows the
           note and every multi-dataset page warns when the current selection contains
-          two members of one group. Keep one cohort per group, or state the overlap
-          explicitly.")
+          two members of one group. The same register ships with the package: ",
+          tags$code("cohort_overlap()"), " returns it, and ",
+          tags$code("cpas_meta(overlap = )"), " acts on it - ",
+          tags$code('"warn"'), " (default) proceeds, names the pair(s) and records them in ",
+          tags$code("$pooled$overlap_pairs"), "; ", tags$code('"refuse"'),
+          " stops with an actionable error; ", tags$code('"dedupe"'),
+          " keeps one member of every overlapping group (the larger cohort, ties by
+          accession sort) and records what it dropped.")
       ),
       .methods_card(
         "6 · Catalog columns and how the app uses them",

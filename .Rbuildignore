@@ -3,3 +3,5 @@
 ^\.git$
 ^\.gitignore$
 ^LICENSE\.md$
+^_pkgdown\.yml$
+^Rplots\.pdf$
