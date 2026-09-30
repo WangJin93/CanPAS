@@ -1,4 +1,4 @@
-url: https://github.com/WangJin93/CanPAS
+url: https://wangjin93.github.io/CanPAS/
 template:
   bootstrap: 5
 development:
@@ -26,6 +26,7 @@ navbar:
     github:
       icon: fa-github
       href: https://github.com/WangJin93/CanPAS
+      aria-label: GitHub repository
 
 reference:
   - title: Endpoints and endpoint semantics

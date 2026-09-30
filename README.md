@@ -44,6 +44,9 @@ What it adds to the usual single-cohort workflow:
 **Status**: version 1.0.0 (first release) · licence MIT · `R CMD check`
 0 errors / 0 warnings / 1 note (host library notice) · a tool paper is in preparation.
 
+**Documentation site**: <https://wangjin93.github.io/CanPAS/> (function
+reference, both articles and the 1.0.0 changelog).
+
 ## Installation
 
 ```r
