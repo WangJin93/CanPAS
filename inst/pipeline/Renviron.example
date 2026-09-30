@@ -1,0 +1,7 @@
+# CPAS pipeline credentials and data root.
+# Copy the values into your shell environment or into ~/.Renviron:
+#   CPAS_DB_PASSWORD=...        # password for the CPAS MySQL mirror
+#   CPAS_DB_USER=CPAS           # optional, defaults to CPAS
+#   CPAS_DB_HOST=139.224.80.159 # optional, defaults to the public mirror
+#   CPAS_DATA_ROOT=/path/to/CPAS
+# Scripts read the password from CPAS_DB_PASSWORD and fail closed when it is unset.

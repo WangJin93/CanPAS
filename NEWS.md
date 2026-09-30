@@ -4,6 +4,42 @@ First public release. CanPAS is a curated cross-archive cancer prognosis resourc
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.
 
+## The curation pipeline now ships inside the package (`inst/pipeline/`, scripts only) (2026-09-30)
+
+The scripted pipeline that builds and maintains the curated mirror is now part of the
+released package. The 67 standalone step scripts that were run from a separate
+`pipeline/R/` checkout are consolidated into nine files under `inst/pipeline/`, together
+with the entry point `run_pipeline.R`, a `README.md` and `.Renviron.example`. Nothing is
+executed at install time and **no data file is added** — the scripts operate on an external
+data root (`CPAS_DATA_ROOT`), exactly as before.
+
+* One file per stage: `01_ingest_parse.R`, `02_platform_maps.R`, `03_survival_tables.R`,
+  `04_cohort_builds.R`, `05_clinical_and_scale.R`, `06_catalog_and_registry.R`,
+  `07_mirror_upload.R`, `08_qc_screen_and_verify.R`, `09_analysis_and_figures.R`; the
+  end-to-end test report `CPAS_full_test_report.Rmd` rides along verbatim.
+* Every original script is embedded **byte-for-byte** inside a zero-argument runner
+  (`run_<script>()`), so sourcing a consolidated file defines functions only, has no side
+  effects, and each step still runs in its own process. All 270 function definitions keep an
+  identical deparsed body, and 66 of the 67 scripts appear verbatim (the exception is the
+  four-line preamble of `07b_split_tnm.R` that re-read its sibling script from
+  `<root>/pipeline/R/`; the consolidated file already carries that script verbatim and
+  exposes the same normalizers, which is what makes the step work without the old layout).
+* `run_pipeline.R` keeps the previous interface — `--list`, `--check`, `--from/--to`,
+  `--only`, `--dry-run` — the same log and the same one-process-per-step behaviour; its step
+  table now covers all 67 scripts and names the consolidated file each one lives in.
+* Two pieces of documented glue are added: `05_clinical_and_scale.R` exposes the clinical
+  normalizers (`MISS_TOKENS`, `is_missing_token`, `strip_missing`, `clean_text`, `norm_tnm`)
+  at file level, and `04_cohort_builds.R` exposes `scale_verdict()`, in both cases because
+  the original step depended on a definition living in another script. The copies are
+  verbatim.
+* Read them from R with `system.file("pipeline", package = "CanPAS")`, or run one step with
+  `source(system.file("pipeline", "<file>.R", package = "CanPAS")); run_<script>()`.
+* Verified: sourcing all nine files creates only the expected 73 objects and modifies no file
+  under the data root; `run_02_gpl_map()`, `run_03_surv_table()`, `run_04_qc_report()` and
+  `run_07b_split_tnm()` reproduce the original scripts' output byte-for-byte on real inputs;
+  `parseGSEMatrix()` returns identical results on cached series matrices; and
+  `run_16_verify_catalog_mirror()` still reports 0 errors / 0 warnings / 0 info over 197 rows.
+
 ## TCGA cohorts now work out of the box: the clinical/survival tables ship with the package (2026-09-30)
 
 The two local TCGA tables (`tcga_clinical.rda`, `tcga_surv.rda`; 196 KB together) are now

@@ -65,7 +65,8 @@ install.packages(c("shiny", "DT", "bs4Dash", "shinyWidgets", "shinycssloaders",
 | Variable / option | Used for |
 |---|---|
 | `CPAS_DATA_ROOT` | **optional override**, needed only to read cohort clinical covariates in the app or to use a project checkout's `<root>/data/tcga/*.rda` instead of the tables bundled with the package. Unset, TCGA cohorts work out of the box (the clinical/survival tables ship inside CanPAS) and the GEO/CGGA mirror and UCSC Xena work as usual. |
-| `CPAS_DB_PASSWORD` | the curation pipeline that maintains the mirror (never hard-coded in the package) |
+| `CPAS_DB_PASSWORD` | the curation pipeline shipped under `inst/pipeline/`, for the steps that write to the mirror (never hard-coded in the package) |
+| `CPAS_PIPELINE_DIR` | optional override for the directory holding the consolidated pipeline scripts (defaults to `system.file("pipeline", package = "CanPAS")`) |
 | `options(CanPAS.cache_dir=)`, `CANPAS_CACHE_DIR` | where downloaded answers are cached |
 | `options(CanPAS.cache=)`, `CANPAS_CACHE` | switch the cache off |
 | `options(CanPAS.cache_ttl=)` | cache lifetime in seconds (30 days by default) |
@@ -309,19 +310,51 @@ not, are listed in the accompanying paper. In short:
 * `tests/testthat/` holds 119 `test_that` blocks and 505 assertions, covering every
   defect found in the pre-release audit.
 
+## Curation pipeline
+
+The scripted pipeline that built and maintains the curated mirror ships **inside**
+the package, as scripts only, under `inst/pipeline/`. It is the pipeline the paper
+refers to; it is not a separate download.
+
+* Nine consolidated files, `01_ingest_parse.R` … `09_analysis_and_figures.R`, plus the
+  entry point `run_pipeline.R`, a `README.md` and `.Renviron.example`. They consolidate
+  the 67 standalone step scripts the pipeline was originally run from.
+* Every original script is embedded **byte-for-byte** inside a zero-argument runner
+  (`run_<script>()`), so `source()`-ing a file defines functions and has no side
+  effects, and each step still runs in its own process. All 270 function definitions
+  keep an identical deparsed body.
+* **No data files are added to the package.** The pipeline reads and writes an external
+  data root (`CPAS_DATA_ROOT`, by default `/home/Jingle/data/Project/CPAS` on the
+  authors' machine); the packaged TCGA tables under `inst/extdata/tcga/` are unrelated
+  to it. On a machine without that tree the scripts still document exactly how each
+  cohort was curated, but they cannot re-create the mirror without the raw archives.
+* Locate and run them from R:
+
+```r
+system.file("pipeline", package = "CanPAS")          # the installed script directory
+source(system.file("pipeline", "05_clinical_and_scale.R", package = "CanPAS"))
+run_07b_split_tnm()                                   # one step, as before
+```
+
+```sh
+Rscript "$(Rscript -e 'cat(system.file("pipeline","run_pipeline.R",package="CanPAS"))')" --list
+```
+
 ## Repository layout
 
 ```
 R/                  exported functions (37) and internal helpers
 man/                roxygen-generated help pages (50)
 inst/shiny/CanPAS/  the bundled Shiny application (apps/, www/, HELP.md)
+inst/pipeline/      the curation pipeline, shipped as consolidated scripts (no data)
 data/               dataset_info.rda (the catalog) and ID_map.rda
 tests/testthat/     regression tests
 NEWS.md             change log for 1.0.0
 ```
 
-The curation pipeline that builds and maintains the mirror, and the data root itself,
-are distributed separately from this package.
+The data root the pipeline operates on is distributed separately from this package;
+the curated tables the package serves are already inside it (`data/dataset_info.rda`)
+or are served by the public mirror.
 
 ## Citation and licence
 

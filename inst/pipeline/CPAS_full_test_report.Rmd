@@ -1,0 +1,354 @@
+---
+title: "CanPAS 包完整测试报告（函数 × 数据 × 临床 TNM/Stage）"
+author: "CanPAS pipeline"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 8, fig.height = 6, cache = FALSE,
+                      error = TRUE, collapse = TRUE,
+                      cache.path = file.path("/home/Jingle/data/Project/CPAS/pipeline/out/knit_cache"))
+suppressMessages({
+  library(CanPAS); library(survival); library(ggplot2); library(dplyr)
+  library(RMySQL); library(knitr)
+})
+ROOT  <- "/home/Jingle/data/Project/CPAS"
+setwd(ROOT)
+out   <- file.path(ROOT, "pipeline/out")
+dir.create(out, showWarnings = FALSE, recursive = TRUE)
+data(ID_map)
+di <- read.csv(file.path(ROOT, "data/dataset_info.csv"), stringsAsFactors = FALSE)
+
+con <- dbConnect(MySQL(), host="139.224.80.159", dbname="cpas",
+                 user="CanPAS", password = Sys.getenv("CPAS_DB_PASSWORD"))
+tabs <- dbListTables(con)
+surv_db <- sub("_surv$","", tabs[grepl("_surv$", tabs)])
+expr_db <- setdiff(tabs[grepl("^GSE", tabs)], paste0(surv_db,"_surv"))
+dbDisconnect(con)
+endpoint_auto <- function(cols){
+  hit <- intersect(c("OS","DSS","DFS","RFS","PFS","MFS","DRFS","EFS"),
+                   sub("_(status|time)$","", cols))
+  if (length(hit)) hit[1] else NA_character_
+}
+fetch_merged <- function(acc, genes, max_try=3){
+  key <- paste(acc, paste(genes, collapse="+"), sep="||")
+  if (exists(key, envir=.fetch, inherits=FALSE)) return(.fetch[[key]])
+  cdir <- file.path(ROOT, "pipeline/out/fetch_cache")
+  dir.create(cdir, showWarnings = FALSE, recursive = TRUE)
+  cfile <- file.path(cdir, paste0(gsub("[^[:alnum:]]","_",key), ".rds"))
+  if (file.exists(cfile)) { res <- readRDS(cfile); assign(key, res, envir=.fetch); return(res) }
+  for (i in seq_len(max_try)) {
+    r <- tryCatch(cohort_merged(acc, genes, "OS"), error=function(e) e)
+    if (!inherits(r,"error")) {
+      res <- list(ok=TRUE, d=r); saveRDS(res, cfile)
+      assign(key, res, envir=.fetch); return(res)
+    }
+    Sys.sleep(6 + 5*i)   # 429 限流时较长退避
+  }
+  res <- list(ok=FALSE, msg=if(inherits(r,"error")) r$message else "unknown")
+  saveRDS(res, cfile); assign(key, res, envir=.fetch); res
+}
+.fetch <- new.env(parent = emptyenv())
+one_cox <- function(d, col, ep){
+  tc <- paste0(ep,"_time"); sc <- paste0(ep,"_status")
+  if (!all(c(tc,sc,col) %in% colnames(d))) return(NULL)
+  dd <- d; dd[[tc]] <- as.numeric(dd[[tc]]); dd[[sc]] <- as.numeric(dd[[sc]])
+  dd[[col]] <- as.numeric(dd[[col]])
+  dd <- dd[stats::complete.cases(dd[,c(tc,sc,col)]), ]
+  if (nrow(dd)<10 || length(unique(dd[[sc]]))<2) return(NULL)
+  f <- tryCatch(survival::coxph(survival::Surv(dd[[tc]], dd[[sc]]) ~ dd[[col]]), error=function(e) NULL)
+  if (is.null(f)) return(NULL)
+  b <- coef(f)[1]; se <- sqrt(diag(stats::vcov(f)))[1]
+  data.frame(n=nrow(dd), events=sum(dd[[sc]]==1), HR=exp(b), lower=exp(b-1.96*se),
+             upper=exp(b+1.96*se), p=2*pnorm(-abs(b/se)))
+}
+```
+
+## 0. 安装与环境
+
+安装命令（报告运行前已执行）：
+```bash
+R CMD INSTALL --library=<用户库> CanPAS
+```
+
+```{r env}
+cat("CanPAS 版本:", as.character(packageVersion("CanPAS")), " 位置:", find.package("CanPAS"), "\n")
+cat("R:", R.version.string, "\n")
+cat("DB 表达谱表数:", length(expr_db), " 生存表数:", length(surv_db), "\n")
+cat("dataset_info 行数:", nrow(di), "\n")
+cat("TCGA 保留癌种:", paste(names(CanPAS::tcga_retained), collapse=", "), "\n")
+```
+
+## 1. 函数清点（导出清单）
+
+```{r funcs}
+ex <- sort(getNamespaceExports("CanPAS"))
+cat("共导出", length(ex), "个函数\n")
+kable(data.frame(fn = ex), col.names = "函数", format="html")
+```
+
+## 2. 全数据扫描（GAPDH 为例；终点自动取该队列可用首终点）
+
+覆盖：**所有 GEO“表达+生存”数据集**（DB 中 `expr_db ∩ surv_db`）＋ 代表性 TCGA 项目。
+
+```{r scan, cache=TRUE}
+genes1 <- "GAPDH"
+geo_full <- sort(intersect(intersect(di$Accession, expr_db), surv_db))
+cat("GEO 全量数据集数:", length(geo_full), "\n")
+res_g <- lapply(geo_full, function(acc){
+  fm <- fetch_merged(acc, genes1)
+  if (!fm$ok) return(data.frame(source="GEO", dataset=acc, endpoint=NA, n=NA, events=NA,
+                                HR=NA, lower=NA, upper=NA, p=NA, note=substr(fm$msg,1,80)))
+  ep <- endpoint_auto(colnames(fm$d))
+  if (is.na(ep)) return(data.frame(source="GEO", dataset=acc, endpoint=ep, n=nrow(fm$d),
+                                   events=NA, HR=NA, lower=NA, upper=NA, p=NA, note="无标准终点列"))
+  cx <- one_cox(fm$d, genes1, ep)
+  if (is.null(cx)) return(data.frame(source="GEO", dataset=acc, endpoint=ep, n=nrow(fm$d),
+                                     events=NA, HR=NA, lower=NA, upper=NA, p=NA, note="事件/样本不足或取数失败"))
+  data.frame(source="GEO", dataset=acc, endpoint=ep, cx, note="")
+})
+geo_tab <- do.call(rbind, res_g)
+# TCGA 代表项目（GAPDH，按需 Xena）
+tcg <- c("LUAD","LUSC","BRCA","STAD","LIHC")
+res_t <- lapply(tcg, function(pr){
+  fm <- fetch_merged(paste0("TCGA-",pr), genes1)
+  if (!fm$ok) return(data.frame(source="TCGA", dataset=paste0("TCGA-",pr), endpoint=NA, n=NA,
+                                events=NA, HR=NA, lower=NA, upper=NA, p=NA, note=substr(fm$msg,1,80)))
+  ep <- "OS"; cx <- one_cox(fm$d, genes1, ep)
+  if (is.null(cx)) return(data.frame(source="TCGA", dataset=paste0("TCGA-",pr), endpoint=ep, n=nrow(fm$d),
+                                     events=NA, HR=NA, lower=NA, upper=NA, p=NA, note="失败"))
+  data.frame(source="TCGA", dataset=paste0("TCGA-",pr), endpoint=ep, cx, note="")
+})
+tcga_tab <- do.call(rbind, res_t)
+sweep <- rbind(geo_tab, tcga_tab)
+write.csv(sweep, file.path(out,"test_sweep_GAPDH.csv"), row.names=FALSE)
+ok_g <- sum(!is.na(sweep$HR)); cat("GAPDH 成功队列:", ok_g, "/", nrow(sweep), "\n")
+kable(head(sweep, 20), format="html")
+```
+
+### GAPDH 扫描汇总（按癌种）
+```{r sweep-sum}
+sweep$cancer <- sapply(sweep$dataset, function(a)
+  if (startsWith(a,"TCGA-")) canonical_type(sub("^TCGA-","",a)) else {
+    t <- di$Type[di$Accession==a]; if(length(t)) t[1] else "NA" })
+s <- sweep[!is.na(sweep$HR),]
+summ <- s %>% group_by(cancer) %>% summarise(n_cohort=n(), total_events=sum(events),
+                                             total_n=sum(n), hr_median=median(HR,na.rm=TRUE),
+                                             hr_lt1=mean(HR<1,na.rm=TRUE), .groups="drop")
+kable(summ, col.names=c("癌种","队列数","事件总数","样本总数","HR中位","HR<1比例"), format="html")
+```
+
+## 3. 多基因签名（GAPDH + TNS1 + PTEN）
+
+```{r sig, cache=TRUE}
+genes3 <- c("GAPDH","TNS1","PTEN")
+row_na <- function(dataset, matched, note, cx=NULL) {
+  if (is.null(cx)) cx <- data.frame(n=NA_integer_, events=NA_integer_, HR=NA_real_,
+                                    lower=NA_real_, upper=NA_real_, p=NA_real_)
+  data.frame(dataset=dataset, matched=matched, cx, note=note, stringsAsFactors=FALSE)
+}
+sweep_sig <- lapply(geo_full, function(acc){
+  fm <- fetch_merged(acc, genes3)
+  if (!fm$ok) return(row_na(acc, NA, substr(fm$msg,1,60)))
+  d <- fm$d; gv <- intersect(genes3, colnames(d))
+  ep <- endpoint_auto(colnames(d))
+  if (is.na(ep) || length(gv)<2)
+    return(row_na(acc, paste(gv,collapse="+"),
+                  ifelse(length(gv)<2,"匹配基因不足","无终点")))
+  d[gv] <- lapply(d[gv], function(x) suppressWarnings(as.numeric(x)))  # API 返回字符列
+  z <- tryCatch(scale(as.matrix(d[, gv, drop=FALSE])), error=function(e) NULL)
+  if (is.null(z)) return(row_na(acc, paste(gv,collapse="+"), "scale失败"))
+  d$sig <- rowMeans(z, na.rm=TRUE)
+  cx <- one_cox(d, "sig", ep)
+  if (is.null(cx)) return(row_na(acc, paste(gv,collapse="+"), "事件/样本不足"))
+  row_na(acc, paste(gv,collapse="+"), "", cx)
+})
+sig_tab <- do.call(rbind, sweep_sig)
+sig_tab$sigHR <- sig_tab$HR
+write.csv(sig_tab, file.path(out,"test_sweep_signature.csv"), row.names=FALSE)
+ok_s <- sum(!is.na(sig_tab$sigHR)); cat("签名成功队列:", ok_s, "/", nrow(sig_tab), "\n")
+kable(head(sig_tab[,c("dataset","matched","n","events","sigHR","p","note")], 20), format="html")
+```
+
+### 每基因单因素汇总（匹配基因 ≥2 者进入签名）
+```{r sig-pergene}
+sig_long <- sig_tab[!is.na(sig_tab$sigHR), ]
+cat("多基因签名 HR 中位数:", round(median(sig_long$sigHR,na.rm=TRUE),3),
+    " 事件合计:", sum(sig_long$events), "\n")
+kable(sig_long[,c("dataset","matched","n","events","sigHR","p")], format="html")
+```
+
+## 4. 临床信息（TNM 与 Stage）可用性与多因素校正
+
+### 4.1 本地 surv 临床字段可用性（stage/T/N/M/age/sex）
+```{r clin-avail}
+files <- list.files(file.path(ROOT,"data/processed/surv"), pattern="_surv\\.rds$")
+cl <- lapply(files, function(f){
+  d <- tryCatch(readRDS(file.path(ROOT,"data/processed/surv",f)), error=function(e) NULL)
+  if (is.null(d)) return(NULL)
+  data.frame(dataset=gsub("_surv\\.rds$","",f), n=nrow(d),
+             stage=any(c("stage") %in% colnames(d)),
+             T=any(toupper(colnames(d))=="T"), N=any(toupper(colnames(d))=="N"),
+             M=any(toupper(colnames(d))=="M"),
+             age=any(c("age") %in% colnames(d)), sex=any(c("sex","gender") %in% colnames(d)))
+})
+cl <- do.call(rbind, cl)
+avail <- data.frame(field=c("stage","T","N","M","age","sex"),
+                    n_cohort=c(sum(cl$stage),sum(cl$T),sum(cl$N),sum(cl$M),sum(cl$age),sum(cl$sex)))
+kable(avail, col.names=c("字段","含该字段的队列数"), format="html")
+```
+
+### 4.2 多因素示例（GAPDH 校正 age/sex/stage；每队列内部调整后 meta）
+以肺癌 GEO 队列 + TCGA-LUAD/LUSC 为例（队列内可取 stage/age/sex 者纳入）。
+
+```{r multi, cache=FALSE}
+add_clin <- function(d, acc) {
+  if (startsWith(acc, "TCGA-")) return(d)          # tcga_merged 已带 age/sex/stage
+  need <- setdiff(c("age","sex","stage","T","N","M"), colnames(d))
+  if (!length(need)) return(d)
+  sf <- file.path(ROOT, "data/processed/surv", paste0(sub("-", "_", acc), "_surv.rds"))
+  if (!file.exists(sf)) return(d)
+  sv <- readRDS(sf); sv$ID <- rownames(sv)
+  sv <- sv[, intersect(c("ID", need), colnames(sv)), drop = FALSE]
+  merge(d, sv, by = "ID", all.x = TRUE)
+}
+lung_sets <- c("GSE14814","GSE50081","GSE42127","GSE31210","GSE11969","GSE37745",
+               "GSE30219","GSE13213","TCGA-LUAD","TCGA-LUSC")
+adj_list <- list(); uni_list <- list()
+for (acc in lung_sets) {
+  fm <- fetch_merged(acc, "GAPDH")
+  if (!fm$ok) next
+  d <- add_clin(fm$d, acc)
+  ep <- endpoint_auto(colnames(d)); if (is.na(ep) || !"GAPDH" %in% colnames(d)) next
+  keep <- unique(c("GAPDH", paste0(ep, "_time"), paste0(ep, "_status"),
+                   intersect(c("age","sex","stage"), colnames(d))))
+  dd <- d[, keep, drop = FALSE]
+  dd[paste0(ep, "_time")]   <- lapply(dd[paste0(ep, "_time")], as.numeric)
+  dd[paste0(ep, "_status")] <- lapply(dd[paste0(ep, "_status")], as.numeric)
+  dd$GAPDH <- suppressWarnings(as.numeric(dd$GAPDH))   # API 返回字符列 → 连续型
+  if ("age" %in% colnames(dd)) dd$age <- suppressWarnings(as.numeric(dd$age))
+  dd <- dd[stats::complete.cases(dd), ]
+  if (nrow(dd) < 20 || length(unique(dd[[paste0(ep, "_status")]])) < 2) next
+  f1 <- tryCatch(survival::coxph(survival::Surv(dd[[paste0(ep, "_time")]],
+        dd[[paste0(ep, "_status")]]) ~ GAPDH, data = dd), error = function(e) NULL)
+  # 粗分期：任意 stage 文本映射为 I/II/III/IV（罗马或阿拉伯首段），避免细类奇异
+  coarse_stage <- function(x) {
+    x <- trimws(toupper(as.character(x)))
+    x <- sub("^STAGE\\s*", "", x)
+    rom <- ifelse(grepl("^[IVX]+", x), regmatches(x, regexpr("^[IVX]+", x)), NA_character_)
+    num <- suppressWarnings(as.integer(sub("[^0-9].*$", "", x)))
+    c2 <- ifelse(!is.na(num), num, ifelse(rom=="I",1, ifelse(rom=="II",2,
+             ifelse(rom=="III",3, ifelse(rom=="IV",4, NA_real_)))))
+    factor(c2, levels=1:4, labels=c("I","II","III","IV"))
+  }
+  conf_all <- character(0)
+  if ("stage" %in% colnames(dd)) { dd$stage_c <- coarse_stage(dd$stage); conf_all <- c(conf_all,"stage_c") }
+  if ("age" %in% colnames(dd))   conf_all <- c(conf_all, "age")
+  if ("sex" %in% colnames(dd))   conf_all <- c(conf_all, "sex")
+  conf_all <- conf_all[vapply(dd[conf_all], function(x) length(unique(x)) > 1, logical(1))]
+  f2 <- NULL; conf_used <- character(0)
+  if (length(conf_all)) {
+    combos <- unique(c(list(conf_all),
+                       lapply(conf_all, function(drop) setdiff(conf_all, drop)),
+                       as.list(conf_all)))   # 全量 → 逐个剔除 → 单协变量
+    y <- survival::Surv(dd[[paste0(ep, "_time")]], dd[[paste0(ep, "_status")]])
+    for (cc in combos) {
+      cand <- tryCatch(survival::coxph(y ~ ., data = dd[, c("GAPDH", cc), drop = FALSE]),
+                       error = function(e) NULL)
+      if (!is.null(cand)) { f2 <- cand; conf_used <- cc; break }
+    }
+  }
+  grab <- function(f) if (is.null(f)) c(HR = NA_real_, p = NA_real_) else {
+    b  <- as.numeric(coef(f)["GAPDH"])
+    se <- as.numeric(sqrt(diag(stats::vcov(f)))["GAPDH"])
+    c(HR = exp(b), p = 2 * pnorm(-abs(b / se))) }
+  g1 <- grab(f1); g2 <- grab(f2)
+  uni_list[[acc]] <- data.frame(dataset = acc, endpoint = ep, n = nrow(dd),
+                                HR = g1[["HR"]], p = g1[["p"]],
+                                stringsAsFactors = FALSE)
+  adj_list[[acc]] <- data.frame(dataset = acc, endpoint = ep, n = nrow(dd),
+                                conf = paste(conf_used, collapse = "+"),
+                                HR = g2[["HR"]], p = g2[["p"]],
+                                stringsAsFactors = FALSE)
+}
+uni_tab <- do.call(rbind, uni_list); rownames(uni_tab) <- NULL
+adj_tab <- do.call(rbind, adj_list); rownames(adj_tab) <- NULL
+cat("多因素示例队列数(单因素/多因素可用):", nrow(uni_tab), "/",
+    nrow(adj_tab[!is.na(adj_tab$HR), ]), "\n")
+kable(uni_tab, format="html")
+kable(adj_tab, format="html")
+write.csv(uni_tab, file.path(out,"test_multivariate_univ.csv"), row.names=FALSE)
+write.csv(adj_tab, file.path(out,"test_multivariate_adjusted.csv"), row.names=FALSE)
+```
+
+### 4.3 两阶段 meta（按队列内 per-SD，RE）——肺癌 GAPDH（未校正 vs 校正）
+```{r meta2, cache=FALSE}
+mk <- function(lst){ lapply(lst, function(x) x$merged) }
+# 复用上面的合并对象不方便跨 chunk 存储大对象 → 此处直接对代表性队列跑 cpas_meta
+ex_lu <- fetch_merged("TCGA-LUAD","GAPDH"); ex_ls <- fetch_merged("TCGA-LUSC","GAPDH")
+ex_g1 <- fetch_merged("GSE13213","GAPDH")
+merged <- list(); 
+if (ex_lu$ok) merged[["TCGA-LUAD"]] <- ex_lu$d
+if (ex_ls$ok) merged[["TCGA-LUSC"]] <- ex_ls$d
+if (ex_g1$ok) merged[["GSE13213"]] <- ex_g1$d
+if (length(merged)>=2) {
+  r <- cpas_meta(tables=names(merged), marker="GAPDH", type="OS", method="RE",
+                 merged=lapply(merged, function(x) x))
+  write.csv(r$per_cohort, file.path(out,"test_meta_lung_per_cohort.csv"), row.names=FALSE)
+  write.csv(r$pooled, file.path(out,"test_meta_lung_pooled.csv"), row.names=FALSE)
+  kable(r$per_cohort[,c("table","n","events","HR","lower","upper","p")], format="html")
+  kable(r$pooled, format="html")
+  png(file.path(out,"test_meta_lung_forest.png"), width=1300, height=900, res=130)
+  print(plot_meta_forest(r)); dev.off()
+}
+```
+
+## 5. 整合 KM（pooled vs stratified，GAPDH）
+```{r km, cache=FALSE}
+if (!exists("merged") || length(merged) < 2) {
+  cat("无 ≥2 个可用合并队列，跳过整合 KM（见 §4.3 取数状态）\n")
+} else {
+  km_l <- tryCatch(cpas_km_pooled(lapply(merged, function(x) x), marker="GAPDH", type="OS",
+                                  method="both", landmarks=c(1,3,5)), error=function(e) NULL)
+  if (is.null(km_l)) cat("cpas_km_pooled 失败（如终点 OS 缺失或事件不足）\n") else {
+    cat("纳入队列:", length(km_l$cohorts), " 样本:", nrow(km_l$df), "\n")
+    cat("pooled logrank p:", format(km_l$logrank_p,digits=3),
+        " | stratified p:", format(km_l$logrank_p_stratified,digits=3), "\n")
+    png(file.path(out,"test_km_pooled.png"), width=1400, height=1100, res=140)
+    print(plot_cpas_km(km_l)); dev.off()
+    kable(km_l$meta_landmarks, format="html")
+  }
+}
+```
+
+## 6. 单队列示例输出（TCGA-LUAD：COX / ROC）
+```{r single, cache=FALSE}
+if (!exists("ex_lu") || !ex_lu$ok) {
+  cat("TCGA-LUAD 取数失败，跳过示例（见 §4.3 状态）\n")
+} else {
+  d <- ex_lu$d
+  cox <- COX_analysis(d, type="OS", cont_Variates=c("GAPDH"), cate_Variates=NULL, method="uni")
+  kable(cox$results_table, format="html")
+  png(file.path(out,"test_roc_LUAD.png"), width=1200, height=1000, res=140)
+  print(plot_roc(d, type="OS", marker="GAPDH", predict.time=3)); dev.off()
+}
+```
+
+## 7. 说明与失败清单
+```{r notes}
+note <- rbind(
+  data.frame(part="GAPDH 全队列扫描", ok=sum(!is.na(sweep$HR)), total=nrow(sweep)),
+  data.frame(part="多基因签名扫描", ok=ok_s, total=nrow(sig_tab)),
+  data.frame(part="多因素示例", ok=sum(!is.na(adj_tab$HR)), total=nrow(adj_tab))
+)
+kable(note, col.names=c("环节","成功","总数"), format="html")
+fails <- sweep[is.na(sweep$HR), c("source","dataset","note")]
+if (nrow(fails)) kable(fails, format="html") else cat("（无失败记录或已跳过取数失败项，详见各表 note 列）\n")
+cat("\n报告附产物：test_sweep_GAPDH.csv / test_sweep_signature.csv / ",
+    "test_meta_lung_pooled.csv / test_multivariate_*.csv 与图件 png。\n")
+```
+
+---
+*生成时间：`r Sys.time()`；数据源：GEO(MySQL cpas) + TCGA(本地 rda + Xena 按需)，见 REPORT 目录设计文档。*
