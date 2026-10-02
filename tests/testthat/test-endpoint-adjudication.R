@@ -29,11 +29,15 @@ test_that("record_id is stable across n and seed, and the draw is seeded", {
   expect_identical(a, b)                                   # same seed -> same sheet
   d <- endpoint_adjudication(n = 40, seed = 99)
   both <- intersect(a$record_id, d$record_id)
-  expect_true(length(both) > 0)
-  # an id always names the same cohort/token/evidence
-  key <- function(x) paste(x$cohort, x$token, x$evidence, sep = "|")
-  expect_identical(key(a)[match(both, a$record_id)],
-                   key(d)[match(both, d$record_id)])
+  # Different stratified sample sizes/seeds need not overlap. If they do,
+  # a record_id always names the same cohort/token/evidence.
+  if (length(both)) {
+    key <- function(x) paste(x$cohort, x$token, x$evidence, sep = "|")
+    expect_identical(key(a)[match(both, a$record_id)],
+                     key(d)[match(both, d$record_id)])
+  } else {
+    expect_true(length(both) == 0L)
+  }
   # and the ids are assigned before sampling, so they are not 1..n
   expect_false(identical(sort(a$record_id), sprintf("REC%04d", 1:20)))
   # id order is preserved in the sheet

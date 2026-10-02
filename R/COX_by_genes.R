@@ -137,6 +137,10 @@ COX_by_genes <- function(df, type = "OS", genes) {
                      manifest = .cpas_manifest_new(
                        analysis = "COX_by_genes",
                        cohorts = deparse(substitute(df)),
+                       n_input = nrow(df), n_analyzed = nrow(dat), n_excluded = nrow(df) - nrow(dat),
+                       events = events, marker_requested = paste(genes, collapse = ", "),
+                       fitted_covariates = genes, estimator = "survival::coxph",
+                       inference = "Wald coefficient intervals", analyzed_data = dat,
                        family = endpoint_family(type),
                        token = as.character(type)[1],
                        selection_rule = sprintf(paste0("one univariable Cox model per gene (%d gene(s)) on the ",

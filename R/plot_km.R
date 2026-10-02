@@ -54,6 +54,7 @@ plot_km <- function(df, type = "OS", marker, cutpoint = "median", ...) {
   tc <- paste0(type, "_time"); sc <- paste0(type, "_status")
   if (!all(c("ID", tc, sc, marker) %in% colnames(df)))
     stop("'df' must contain columns ID, ", tc, ", ", sc, " and ", marker, ".")
+  n_input <- nrow(df)
   dat <- df[c("ID", tc, sc, marker)]
   dat[[tc]] <- suppressWarnings(as.numeric(dat[[tc]]))
   dat[[sc]] <- suppressWarnings(as.numeric(dat[[sc]]))
@@ -94,5 +95,6 @@ plot_km <- function(df, type = "OS", marker, cutpoint = "median", ...) {
   p$plot <- p$plot +
     ggtitle(marker) +
     theme(plot.title = element_text(hjust = 0.5))
+  attr(p, "manifest") <- .cpas_manifest_new(analysis = "plot_km", cohorts = "user-supplied data", endpoint_evidence = "not supplied; schema only", n_input = n_input, n_analyzed = nrow(dat), n_excluded = n_input - nrow(dat), events = sum(dat$status == 1), marker_requested = marker, estimator = "survival::survfit Kaplan-Meier", inference = "log-rank comparison only when requested by caller", analyzed_data = dat, seed = NA_integer_, primary_path = "plot_km", coverage_status = "sourced_truth", notes = "Marker split uses the requested cutpoint; endpoint token is resolved from supplied columns.")
   p
 }

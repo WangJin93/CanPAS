@@ -1,8 +1,8 @@
 # cpas_manifest.R ------------------------------------------------------------
 # The analysis manifest (workstream P, spec B1.4).
 #
-# Every analysis result carries a `manifest` element and cpas_manifest() returns
-# it. The manifest answers, in one object, the questions a reviewer asks about a
+# Primary analyses carry a manifest list element or plotting-object attribute.
+# cpas_manifest() retrieves either representation. The manifest answers, in one object, the questions a reviewer asks about a
 # reported number: which cohorts, which endpoint token, which pooling classes,
 # how the cohorts were chosen, what was dropped and why, which cut-point rule was
 # used and how many were searched, whether the search was adjusted for, what the
@@ -29,13 +29,34 @@
   d
 }
 
+.cpas_hash_analyzed_inputs <- function(x) {
+  path <- tempfile(fileext = ".rds")
+  on.exit(unlink(path), add = TRUE)
+  saveRDS(x, path, version = 3)
+  unname(tools::md5sum(path))
+}
+
 # Build a manifest from named fields; anything not supplied is filled in with a
 # neutral value so that the field list is identical for every analysis.
 .cpas_manifest_new <- function(analysis, cohorts = character(0),
                                n_cohorts = length(cohorts),
                                family = NA_character_, token = NA_character_,
                                tokens = NULL, token_role = NA_character_,
+                               accession = NA_character_, raw_token = NA_character_,
+                               endpoint_evidence = "not supplied; schema only",
                                pooling = NA_character_,
+                               pooling_class = NA_character_,
+                               n_input = NA_integer_, n_analyzed = NA_integer_,
+                               n_excluded = NA_integer_, events = NA_integer_,
+                               marker_requested = NA_character_,
+                               fitted_covariates = character(0),
+                               marker_definition = NA_character_, covariates_requested = character(0),
+                               estimator = NA_character_, inference = NA_character_,
+                               dataset_hash = NA_character_, hash_scope = NA_character_,
+                               seed = NA_integer_, seed_status = "not recorded; deterministic procedure not asserted",
+                               analyzed_data = NULL, input_data = NULL,
+                               primary_path = analysis,
+                               coverage_status = "schema_only",
                                pooling_classes = NA_character_,
                                pooling_table = NULL,
                                overlap_mode = NA_character_,
@@ -68,6 +89,14 @@
                                       "pooling_class", "pooling_class_source"))
   if (is.null(pi_primary)) pi_primary <- c(lower = NA_real_, upper = NA_real_)
   if (is.null(pi_alt)) pi_alt <- c(lower = NA_real_, upper = NA_real_)
+  if (!is.null(input_data) && is.na(n_input)[1]) n_input <- nrow(input_data)
+  if (!is.null(analyzed_data) && is.na(n_analyzed)[1]) n_analyzed <- nrow(analyzed_data)
+  if (is.na(n_excluded)[1] && is.finite(n_input)[1] && is.finite(n_analyzed)[1])
+    n_excluded <- n_input - n_analyzed
+  if (is.na(dataset_hash)[1] && !is.null(analyzed_data)) {
+    dataset_hash <- .cpas_hash_analyzed_inputs(analyzed_data)
+    hash_scope <- "serialized analyzed_data RDS (not upstream raw dataset)"
+  }
   out <- list(
     analysis = analysis,
     cohorts = as.character(cohorts),
@@ -76,8 +105,28 @@
     token = as.character(token),
     tokens = tokens,
     token_role = as.character(token_role),
+    accession = as.character(accession),
+    raw_token = as.character(raw_token),
+    endpoint_evidence = as.character(endpoint_evidence),
     pooling = as.character(pooling),
+    pooling_class = as.character(pooling_class),
     pooling_classes = as.character(pooling_classes),
+    n_input = as.integer(n_input),
+    n_analyzed = as.integer(n_analyzed),
+    n_excluded = as.integer(n_excluded),
+    events = as.integer(events),
+    marker_requested = as.character(marker_requested),
+    marker_definition = as.character(marker_definition),
+    covariates_requested = as.character(covariates_requested),
+    fitted_covariates = as.character(fitted_covariates),
+    estimator = as.character(estimator),
+    inference = as.character(inference),
+    dataset_hash = as.character(dataset_hash),
+    hash_scope = as.character(hash_scope),
+    seed = as.integer(seed),
+    seed_status = as.character(seed_status),
+    primary_path = as.character(primary_path),
+    coverage_status = as.character(coverage_status),
     pooling_table = pooling_table,
     overlap_mode = as.character(overlap_mode),
     overlap_source = as.character(overlap_source),
@@ -150,7 +199,27 @@
     f("resolved_token", m$token),
     f("resolved_tokens_per_cohort", toks),
     f("token_role", m$token_role),
+    f("accession", m$accession),
+    f("raw_token", m$raw_token),
+    f("endpoint_evidence", m$endpoint_evidence),
     f("pooling_mode", m$pooling),
+    f("pooling_class", m$pooling_class),
+    f("n_input", m$n_input),
+    f("n_analyzed", m$n_analyzed),
+    f("n_excluded", m$n_excluded),
+    f("events", m$events),
+    f("marker_requested", m$marker_requested),
+    f("marker_definition", m$marker_definition),
+    f("covariates_requested", if (length(m$covariates_requested)) paste(m$covariates_requested, collapse = ", ") else "NA"),
+    f("fitted_covariates", if (length(m$fitted_covariates)) paste(m$fitted_covariates, collapse = ", ") else "NA"),
+    f("estimator", m$estimator),
+    f("inference", m$inference),
+    f("dataset_hash", m$dataset_hash),
+    f("hash_scope", m$hash_scope),
+    f("seed", m$seed),
+    f("seed_status", m$seed_status),
+    f("primary_path", m$primary_path),
+    f("coverage_status", m$coverage_status),
     f("pooling_classes_pooled",
       if (length(m$pooling_classes) && any(!is.na(m$pooling_classes)))
         paste(m$pooling_classes, collapse = ", ") else "NA"),
@@ -200,8 +269,12 @@
 #' tau\eqn{^2}, \eqn{I^2}, the prediction interval(s), the R and package
 #' versions, and the timestamp.
 #'
-#' Every analysis result carries the same object as its \code{$manifest}
-#' element; \code{cpas_manifest(result)} reads it. The manifest prints as a
+#' Primary analysis paths return the common schema as a \code{$manifest}
+#' element or a plotting-object \code{manifest} attribute; this accessor reads both.
+#' Input/analysis counts and serialized-input hashes are recorded where measured.
+#' Upstream accession, endpoint evidence and caller seed remain explicitly unknown
+#' when they cannot be established from supplied data. Field presence is distinct
+#' from complete source provenance; \code{hash_scope} describes the hashed input. The manifest prints as a
 #' readable block and converts with \code{as.data.frame()} into a two-column
 #' \code{field}/\code{value} table; the structured pieces (per-cohort pooling
 #' classes, dropped rows/covariates, overlapping pairs) are data.frames inside
@@ -228,6 +301,8 @@ cpas_manifest <- function(x = NULL, ...) {
   if (inherits(x, "cpas_manifest")) return(x)
   if (is.list(x) && !is.null(x$manifest) && inherits(x$manifest, "cpas_manifest"))
     return(x$manifest)
+  am <- attr(x, "manifest", exact = TRUE)
+  if (inherits(am, "cpas_manifest")) return(am)
   stop("cpas_manifest() needs a CanPAS analysis result carrying a $manifest ",
        "element, or no argument at all for an empty skeleton; got ",
        paste(class(x), collapse = "/"), ".", call. = FALSE)

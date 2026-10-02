@@ -28,8 +28,12 @@ proportional-hazards (\code{cox.zph}) result, the meta-analysis method,
 tau\eqn{^2}, \eqn{I^2}, the prediction interval(s), the R and package
 versions, and the timestamp.
 
-Every analysis result carries the same object as its \code{$manifest}
-element; \code{cpas_manifest(result)} reads it. The manifest prints as a
+Primary analysis paths return the common schema as a \code{$manifest}
+element or a plotting-object \code{manifest} attribute; this accessor reads both.
+Input/analysis counts and serialized-input hashes are recorded where measured.
+Upstream accession, endpoint evidence and caller seed remain explicitly unknown
+when they cannot be established from supplied data. Field presence is distinct
+from complete source provenance; \code{hash_scope} describes the hashed input. The manifest prints as a
 readable block and converts with \code{as.data.frame()} into a two-column
 \code{field}/\code{value} table; the structured pieces (per-cohort pooling
 classes, dropped rows/covariates, overlapping pairs) are data.frames inside

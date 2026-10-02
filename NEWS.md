@@ -1,5 +1,28 @@
 # CanPAS 1.0.0
 
+## Publication Release Validation
+
+* The manuscript release is identified locally as 1.0.0. The current source is
+  validated and bundled before publication; local preparation does not perform
+  a remote repository tag, registry upload or CRAN submission.
+* Ten primary analysis paths expose a common manifest schema. Executed validation
+  fixtures measure input/analyzed/excluded rows, events and serialized-input
+  digests, with explicit hash scope and unavailable upstream metadata.
+* Plotting-object manifests are retrieved through `cpas_manifest()` as well as
+  list-based manifests. Ordinary Cox and meta-analysis reject duplicate IDs.
+* Current DL/REML/HK numerical references, nineteen applicable offline safeguard
+  assertions, a multi-DGP paired cut-point study and input re-execution checks
+  supply the publication validation artifacts. Exact run counts and test results
+  are recorded in the release bundle rather than inferred from this changelog.
+* Endpoint records were reviewed by four independent human clinical and
+  methodological experts, who extracted the semantic fields (event definition,
+  time origin, censoring rule, competing events) and classified pooling
+  equivalence over 80 records from 75 cohorts. Paired raw agreement and Cohen's
+  kappa with cohort-cluster bootstrap intervals are reported in the release
+  bundle; unanimous unstated competing-event labels leave kappa undefined. A
+  separate prospective 100-record blinded two-expert packet and its
+  source-evidence protocol remain blank.
+
 First public release. CanPAS is a curated cross-archive cancer prognosis resource
 (GEO mirror, CGGA, TCGA), a scripted curation pipeline and an R package with a
 bundled Shiny application; this section documents the state of that first release.

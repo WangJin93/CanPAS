@@ -110,17 +110,17 @@
 #'    ## A real cohort from the CanPAS mirror: Lung Cancer, OS + DSS, n = 133.
 #'    di <- dataset_info[dataset_info$Accession == "GSE14814", ]
 #'    di[, c("Accession", "Type", "N", "EndpointFamilies")]
-#' 
+#'
 #'    ## Prerequisite chain: expression (probes collapsed) then survival, and
 #'    ## with clin = TRUE the clinical covariates this cohort really carries.
 #'    d <- cohort_merged("GSE13507", c("GAPDH", "ACTB"), type = "OS", clin = TRUE)
 #'    colnames(d)
-#' 
+#'
 #'    ## One model per covariate.
 #'    r <- COX_analysis(d, type = "OS", cont_Variates = c("GAPDH", "age"),
 #'                       cate_Variates = c("grade", "N"), method = "uni")
 #'    head(r$results_table)
-#' 
+#'
 #'    ## Joint model: covariates that cannot be co-estimated are located and
 #'    ## removed, and every decision is recorded together with its reason.
 #'    r2 <- COX_analysis(d, type = "OS", cont_Variates = c("GAPDH", "age"),
@@ -148,6 +148,8 @@ COX_analysis <- function(df,
     stop("'auto_repair' must be TRUE or FALSE.", call. = FALSE)
   df_name <- deparse(substitute(df))
   if (!is.data.frame(df)) stop("'df' must be a data.frame.")
+  if ("ID" %in% names(df) && (anyNA(df$ID) || anyDuplicated(df$ID)))
+    stop("Sample ID values must be non-missing and unique; duplicated ID detected.", call. = FALSE)
   cont_Variates <- if (is.null(cont_Variates)) character(0) else as.character(cont_Variates)
   cate_Variates <- if (is.null(cate_Variates)) character(0) else as.character(cate_Variates)
   all_vars <- unique(c(cont_Variates, cate_Variates))
@@ -233,7 +235,8 @@ COX_analysis <- function(df,
                stringsAsFactors = FALSE)
   }
 
-  models <- list(); summaries <- list(); parts <- list()
+  models <- list(); summaries <- list(); parts <- list(); model_inputs <- list()
+  requested_cont <- cont_Variates; requested_vars <- all_vars
   failed <- character(0)
   # covariates handled automatically in the multivariable branch (empty for the
   # univariable branch, but always present so the metadata can report it)
@@ -252,6 +255,7 @@ COX_analysis <- function(df,
       if (!diag$ok) { failed <- c(failed, paste0(v, ": ", diag$reason)); next }
       fit <- diag$fit
       models[[v]] <- fit; summaries[[v]] <- summary(fit)
+      model_inputs[[v]] <- dd[, c("time", "status", v), drop = FALSE]
       r <- tryCatch(coef_rows(fit, dd, v, character(0)), error = function(e) e)
       if (inherits(r, "error")) { failed <- c(failed, paste0(v, ": ", conditionMessage(r))); next }
       r$N <- nrow(dd)
@@ -265,6 +269,7 @@ COX_analysis <- function(df,
       if (!diag$ok) { failed <- c(failed, paste0(v, ": ", diag$reason)); next }
       fit <- diag$fit
       models[[v]] <- fit; summaries[[v]] <- summary(fit)
+      model_inputs[[v]] <- dd[, c("time", "status", v), drop = FALSE]
       hdr <- header_row(v, nrow(dd))
       r <- tryCatch(coef_rows(fit, dd, character(0), v), error = function(e) e)
       if (inherits(r, "error")) { failed <- c(failed, paste0(v, ": ", conditionMessage(r))); next }
@@ -423,6 +428,7 @@ COX_analysis <- function(df,
     cate_Variates <- intersect(cate_Variates, vars)
     fit <- diag$fit
     models$multivariate <- fit; summaries$multivariate <- summary(fit)
+    model_inputs$multivariate <- dd[, unique(c("time", "status", vars)), drop = FALSE]
     n_par <- length(stats::coef(fit)); events_multi <- sum(dd$status == 1)
     if (n_par > 0 && events_multi / n_par < 10)
       warning(sprintf(paste0("Multivariable model has %.1f events per variable ",
@@ -519,6 +525,18 @@ COX_analysis <- function(df,
   result_obj$manifest <- .cpas_manifest_new(
     analysis = "COX_analysis",
     cohorts = df_name,
+    n_input = nrow(df),
+    n_analyzed = if (method == "multi") nrow(model_inputs$multivariate) else
+      max(vapply(models, function(m) m$n, numeric(1))),
+    events = if (method == "multi") models$multivariate$nevent else
+      max(vapply(models, function(m) m$nevent, numeric(1))),
+    marker_requested = paste(requested_cont, collapse = ", "),
+    marker_definition = paste(requested_vars, collapse = ", "),
+    covariates_requested = requested_vars,
+    fitted_covariates = unique(unlist(lapply(models, function(m) names(stats::coef(m))))),
+    analyzed_data = model_inputs,
+    estimator = "survival::coxph", inference = "Wald normal coefficient inference; model-specific N in summaries",
+    coverage_status = "measured model-input list; scalar univariate N/events are maxima; exact per-model counts in model_audit",
     family = if (is.null(type)) NA_character_ else endpoint_family(type),
     token = if (is.null(type)) NA_character_ else as.character(type),
     token_role = if (is.null(type)) NA_character_ else "resolved for this cohort",
@@ -543,6 +561,10 @@ COX_analysis <- function(df,
                       else " (fail-safe, the package default): a model that would need covariates dropped, levels merged or rows excluded is reported as not estimable"),
               if (length(failed)) paste0("variable(s) skipped as not estimable: ",
                                          paste(failed, collapse = "; ")) else NULL))
+  result_obj$manifest$model_audit <- lapply(models, function(fit) list(
+    n_analyzed = fit$n, events = fit$nevent,
+    fitted_terms = names(stats::coef(fit)),
+    model_response_hash = .cpas_hash_analyzed_inputs(fit$y)))
   class(result_obj) <- "cpas_COX"
   result_obj
 }

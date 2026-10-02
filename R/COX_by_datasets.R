@@ -32,7 +32,7 @@
 #'    ## The same gene in real cohorts of one cancer type (lung, OS).
 #'    di <- dataset_info[dataset_info$Type == "Lung Cancer", "Accession"]
 #'    head(di)
-#' 
+#'
 #'    r <- COX_by_datasets(c("GSE14814", "GSE31210"), gene = "GAPDH", type = "OS")
 #'    head(r$results_table)
 #' }
@@ -95,6 +95,16 @@ COX_by_datasets <- function(datasets, gene, type = "OS", precision = 3,
     manifest = .cpas_manifest_new(
       analysis = "COX_by_datasets",
       cohorts = names(individual_results),
+      accession = names(individual_results),
+      raw_token = combined_results$endpoint,
+      n_input = sum(vapply(individual_results, function(x) x$cox_analysis$manifest$n_input, integer(1))),
+      n_analyzed = sum(vapply(individual_results, function(x) x$cox_analysis$manifest$n_analyzed, numeric(1))),
+      events = sum(vapply(individual_results, function(x) x$cox_analysis$manifest$events, numeric(1))),
+      dataset_hash = .cpas_hash_analyzed_inputs(lapply(individual_results, function(x) x$cox_analysis$manifest$dataset_hash)),
+      hash_scope = "serialized per-cohort analyzed-input digest list; failed retrieval inputs unknown",
+      marker_requested = gene, marker_definition = gene, fitted_covariates = gene,
+      estimator = "survival::coxph", inference = "Wald coefficient intervals; BH p adjustment",
+      coverage_status = "measured successfully retrieved cohorts; failed retrieval counts unknown",
       family = endpoint_family(type),
       token = as.character(type)[1],
       selection_rule = sprintf(paste0("the same univariable Cox model for gene %s was fitted in each of the %d ",

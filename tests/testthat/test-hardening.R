@@ -208,7 +208,7 @@ test_that("pooling = 'exact' keeps only Exact-equivalent rows and records the re
   ct <- data.frame(
     Accession = c("A", "B", "C", "A", "B", "C"),
     Family    = c("OS", "OS", "OS", "DFS", "DFS", "DFS"),
-    Token     = c("OS", "OS", "OS", "DFS", "RFS", "DFS"),
+    Token     = c("OS", "OS", "OS", "DFS", "DFS", "DFS"),
     TokenRole = c("primary", "primary", "primary", "primary", "contributing", "primary"),
     PoolingClass = c("Exact-equivalent", "Exact-equivalent", "Exact-equivalent",
                      "Exact-equivalent", "Clinically-related", "Exact-equivalent"),
@@ -421,6 +421,7 @@ test_that("the deprecated drop_nonestimable alias still selects the repair", {
 test_that("cpas_meta reports a cohort whose confounders cannot be co-estimated", {
   a <- mk_cohort(200, "A", seed = 51); b <- mk_cohort(150, "B", seed = 52)
   a$flat <- 1                                   # constant in A only
+  b$flat <- seq_len(nrow(b))                    # present and variable in B
   r <- cpas_meta(c("A", "B"), "GAPDH", "OS", confounders = c("age", "flat"),
                  merged = list(A = a, B = b))
   expect_equal(r$pooled$k, 1L)

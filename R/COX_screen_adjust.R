@@ -40,7 +40,7 @@
 #'    ## Real cohort with real covariates: expression + survival + clinical
 #'    ## columns are fetched and merged by the prerequisite functions.
 #'    d <- cohort_merged("GSE13507", "GAPDH", type = "OS", clin = TRUE)
-#' 
+#'
 #'    q <- COX_screen_adjust(d, type = "OS", cont_Variates = c("GAPDH", "age"),
 #'                            cate_Variates = c("grade", "N"), p.threshold = 0.05)
 #'    q$sig_variates
@@ -197,6 +197,18 @@ COX_screen_adjust <- function(df, type = "OS",
        cate_Variates = cate_Variates,
        manifest = .cpas_manifest_new(
          analysis = "COX_screen_adjust",
+          n_input = uni$manifest$n_input,
+          n_analyzed = if (!is.null(multi)) multi$manifest$n_analyzed else uni$manifest$n_analyzed,
+          events = if (!is.null(multi)) multi$manifest$events else uni$manifest$events,
+          dataset_hash = if (!is.null(multi)) multi$manifest$dataset_hash else uni$manifest$dataset_hash,
+          hash_scope = "selected joint model input or univariate common input; selection stage recorded",
+          marker_requested = cont_Variates,
+          marker_definition = paste(c(cont_Variates, cate_Variates), collapse = ", "),
+          covariates_requested = c(cont_Variates, cate_Variates),
+          fitted_covariates = if (!is.null(multi)) multi$manifest$fitted_covariates else uni$manifest$fitted_covariates,
+          estimator = "survival::coxph; outcome-based univariate screening",
+          inference = "Wald intervals following screening; no post-selection correction",
+          coverage_status = "measured stage-specific input audit; selected-model inference unadjusted",
          cohorts = deparse(substitute(df)),
          family = endpoint_family(type),
          token = as.character(type)[1],

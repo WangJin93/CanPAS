@@ -43,9 +43,9 @@ takes the highest \code{top_pct}\% as High (threshold = that cohort's
 \eqn{100 - top_pct} percentile, so \code{top_pct = 25} means the top 25\%
 are high expressors); \code{"custom"} uses the absolute threshold
 \code{cut_value}, with High above it and Low at or below it. An absolute
-threshold is meaningful here because every matrix served by the mirror is on
-the log2 scale (Section 2.3 of the accompanying paper), so one value means
-the same thing in every cohort; percentile splits are nevertheless the
+threshold requires comparable measurement and normalization across cohorts;
+a log2 transformation alone does not establish that comparability.
+Percentile splits are nevertheless the
 conventional reading of "high versus low expression", and the application
 offers only median and top_pct. A per-cohort search for the best cut point
 is deliberately \strong{not} offered: it would repeat, cohort by cohort,
@@ -78,8 +78,8 @@ An ordinary \code{list} (no class attribute; not an S3 object, so
     of the rule; \code{cohort_thresholds} gives the per-cohort threshold when
     \code{cut = "top_pct"}}
   \item{\code{n_dropped}, \code{empty_cohorts}, \code{empty_reasons}:}{the split
-    rule is exhaustive for the cohorts that entered (\code{n_dropped} is always
-    0); when a threshold or percentile rule leaves one side empty in a cohort,
+    \code{n_dropped} counts incomplete rows removed from included cohorts;
+    when any split rule leaves one side empty in a cohort,
     that cohort is recorded in \code{empty_cohorts} with its reason and does not
     enter the pool}
   \item{\code{skipped_cohorts}, \code{skipped_reasons}:}{cohorts excluded for
@@ -114,8 +114,8 @@ median and not an absolute threshold across cohorts; when an absolute
 threshold is wanted, use \code{plot_km()} cohort by cohort. The IPD route
 reports the log-rank p both unstratified and stratified by cohort; reporting
 the stratified one is recommended. In the time-point route, a time point
-beyond a cohort's longest follow-up reuses that cohort's last observed S(t)
-(\code{extend = TRUE}), and the number of cohorts actually contributing at
+beyond a cohort's longest follow-up excludes that cohort at that time
+(\code{extend = FALSE}), and the number of cohorts actually contributing at
 each time point is recorded in \code{meta_landmarks$k}.
 }
 \examples{

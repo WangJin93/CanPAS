@@ -4,17 +4,19 @@ Title: Cancer Prognosis Analysis Suite
 Version: 1.0.0
 Authors@R: person("Jin", "Wang", email = "Jinwang93@suda.edu.cn",
     role = c("aut", "cre"))
+Author: Jin Wang [aut, cre]
+Maintainer: Jin Wang <Jinwang93@suda.edu.cn>
 Description: A survival-analysis toolkit for public cancer cohorts. It serves
     expression matrices and survival tables from a curated GEO/CGGA mirror over
     a public REST API and from TCGA through UCSC Xena with local clinical
     tables, and exposes one uniform "merged data" schema. Endpoints are requested
     by family (OS, DSS, DFS, PFS, MFS), and the token a cohort actually reports is
-    resolved per cohort and returned with every result, so cohorts are never
-    pooled across families. Functions cover gene and signature scoring,
+    resolved per cohort with candidate pooling classes and provenance metadata.
+    Recorded token classes are not independently established clinical equivalence. Functions cover gene and signature scoring,
     Kaplan-Meier and cut-point analysis, univariable and multivariable Cox
     models, time-dependent ROC, cross-cohort random-effects meta-analysis, pooled
-    Kaplan-Meier with a prediction interval, and competing risks, with five
-    statistical safeguards disclosed by default. A bundled Shiny application
+    Kaplan-Meier with landmark meta-analysis intervals, and competing risks,
+    with pathway-specific statistical safeguards and explicit audit records. A bundled Shiny application
     drives the same exported functions.
 License: MIT + file LICENSE
 URL: https://github.com/WangJin93/CanPAS

@@ -37,9 +37,9 @@
 #'   \code{pi_method} does not change the pooled HR, its confidence interval, or
 #'   any heterogeneity statistic.
 #' @param confounders Optional character vector of covariate names to adjust for
-#'   (they must exist in the merged data; the covariates available in each
-#'   cohort are intersected). With the default \code{auto_repair = FALSE} a
-#'   cohort in which a requested covariate is constant is reported as
+#'   (they must exist in the merged data). With the default
+#'   \code{auto_repair = FALSE}, a cohort in which a requested covariate is
+#'   missing or constant is reported as
 #'   \code{not estimable} instead of being adjusted for a reduced covariate set.
 #' @param min_events Minimum number of events for a cohort to enter (default 5).
 #' @param max_try Retries per cohort when fetching fails (API jitter).
@@ -221,6 +221,7 @@ cpas_meta <- function(datasets, marker, type = "OS",
 
   per <- list(); errors <- list(); mods <- list(); rows_dropped <- list()
   ph_list <- list(); lookup <- list()
+  received_counts <- integer(0); analyzed_inputs <- list()
   for (t in datasets) {
     r <- NULL
     if (!is.null(merged) && !is.null(merged[[t]])) {
@@ -250,6 +251,9 @@ cpas_meta <- function(datasets, marker, type = "OS",
       }
       df <- r$df
     }
+    received_counts[t] <- nrow(df)
+    if ("ID" %in% names(df) && (anyNA(df$ID) || anyDuplicated(df$ID)))
+      stop("Dataset ", t, ": sample ID values must be non-missing and unique.", call. = FALSE)
     # family (OS/DSS/DFS/PFS/MFS) -> the concrete endpoint this cohort has; a
     # raw token is also accepted
     tok <- endpoint_resolve(t, type)
@@ -272,16 +276,28 @@ cpas_meta <- function(datasets, marker, type = "OS",
       next
     }
     cls <- .cpas_pooling_lookup(t, family, table = class_table, tokens = tok)
+    if (!is.na(cls$token) && !identical(as.character(cls$token), as.character(tok))) {
+      add_excluded(t, "pooling", sprintf("endpoint token conflict: analysis uses %s but classification table records %s",
+                                        tok, cls$token))
+      next
+    }
     cls$family <- family
     lookup[[t]] <- cls
-    if (identical(pooling, "exact") && !identical(cls$pooling_class, "Exact-equivalent")) {
+    allowed_classes <- if (identical(pooling, "exact")) "Exact-equivalent" else
+      c("Exact-equivalent", "Clinically-related")
+    if (!cls$pooling_class %in% allowed_classes) {
       add_excluded(t, "pooling",
-                   sprintf("pooling = \"exact\" keeps only Exact-equivalent rows; this cohort's token is %s (%s in family %s)",
-                           tok, cls$pooling_class, family))
+                   sprintf("pooling = \"%s\" keeps only %s endpoint classes; this cohort's token is %s (%s in family %s)",
+                           pooling, paste(allowed_classes, collapse = " or "), tok,
+                           cls$pooling_class, family))
       next
     }
     df[[tc]] <- suppressWarnings(as.numeric(df[[tc]]))
     df[[sc]] <- suppressWarnings(as.numeric(df[[sc]]))
+    if (any(!is.na(df[[sc]]) & (!is.finite(df[[sc]]) | !df[[sc]] %in% c(0, 1))))
+      stop("Dataset ", t, ": status must be coded 0 (censored) / 1 (event).", call. = FALSE)
+    if (any(!is.na(df[[tc]]) & df[[tc]] < 0))
+      stop("Dataset ", t, ": negative survival time is not allowed.", call. = FALSE)
     for (gn in genes) if (gn %in% colnames(df)) df[[gn]] <- suppressWarnings(as.numeric(df[[gn]]))
 
     if (grepl("[+*:]", marker)) {
@@ -313,6 +329,18 @@ cpas_meta <- function(datasets, marker, type = "OS",
 
     # analysis sample = complete cases of (time, status, marker) and the
     # covariates used, so that standardisation and the model use one sample
+    missing_cov <- setdiff(confounders, colnames(df))
+    if (length(missing_cov)) {
+      if (!isTRUE(auto_repair)) {
+        add_excluded(t, "model", paste0("not estimable (auto_repair = FALSE): requested covariate(s) absent: ",
+                                         paste(missing_cov, collapse = ", ")))
+        next
+      }
+      for (v in missing_cov)
+        mods[[length(mods) + 1L]] <- data.frame(cohort = t, variable = v,
+          detail = "absent from supplied data", reason = "requested covariate dropped with explicit auto_repair = TRUE",
+          stringsAsFactors = FALSE)
+    }
     conf_all <- intersect(confounders, colnames(df))
     conf_avail <- conf_all
     if (length(conf_all)) {
@@ -381,6 +409,7 @@ cpas_meta <- function(datasets, marker, type = "OS",
       next
     }
     fit <- diag$fit
+    analyzed_inputs[[t]] <- df[, unique(c("ID", tc, sc, vars))[unique(c("ID", tc, sc, vars)) %in% names(df)], drop = FALSE]
     ph <- tryCatch(survival::cox.zph(fit), error = function(e) NULL)
     if (!is.null(ph)) {
       tb <- as.data.frame(ph$table)
@@ -391,6 +420,9 @@ cpas_meta <- function(datasets, marker, type = "OS",
     per[[t]] <- data.frame(dataset = t, endpoint = tok,
                            pooling_class = cls$pooling_class,
                            n = nrow(df), events = events,
+                           covariates_used = paste(conf_avail, collapse = ", "),
+                           n_parameters = length(stats::coef(fit)),
+                           events_per_parameter = events / length(stats::coef(fit)),
                            HR = exp(b), lower = exp(b - 1.96 * se), upper = exp(b + 1.96 * se),
                            logHR = b, se = se,
                            p = 2 * stats::pnorm(-abs(b / se)), stringsAsFactors = FALSE)
@@ -463,7 +495,19 @@ cpas_meta <- function(datasets, marker, type = "OS",
     notes <- c(notes, "the shared-patient register is not shipped in this build, so overlap could not be checked")
   manifest <- .cpas_manifest_new(
     analysis = "cpas_meta",
-    cohorts = pc$dataset,
+    cohorts = pc$dataset, accession = pc$dataset,
+    raw_token = pc$endpoint, pooling_class = pc$pooling_class,
+    n_input = sum(received_counts), n_analyzed = sum(pc$n),
+    n_excluded = sum(received_counts) - sum(pc$n),
+    hash_scope = "serialized analyzed per-cohort model input list; not upstream raw dataset",
+    events = sum(pc$events), marker_requested = marker, marker_definition = marker,
+    covariates_requested = confounders,
+    fitted_covariates = stats::setNames(pc$covariates_used, pc$dataset),
+    estimator = paste0("survival::coxph; random-effects ", pooled$method),
+    inference = paste0("Wald cohort estimates; ", pooled$se_method, "; PI: ", pooled$pi_rule),
+    analyzed_data = analyzed_inputs,
+    dataset_hash = .cpas_hash_analyzed_inputs(analyzed_inputs),
+    coverage_status = "measured received-input and analyzed-row audit; unfetched inputs have unknown counts",
     family = family,
     token = paste(sort(unique(pc$endpoint)), collapse = ", "),
     tokens = stats::setNames(pc$endpoint, pc$dataset),
@@ -653,6 +697,7 @@ meta_pool <- function(b, se, p = NULL, method = c("REML", "DL", "HK", "FE"),
   w2 <- 1 / (se^2 + tau2)
   bm <- sum(w2 * b) / sum(w2)
   seM <- sqrt(1 / sum(w2))
+  se_re <- seM
   se_method <- "inverse-variance random effects"
   crit <- 1.96
   pv <- 2 * stats::pnorm(-abs(bm / seM))
@@ -666,10 +711,10 @@ meta_pool <- function(b, se, p = NULL, method = c("REML", "DL", "HK", "FE"),
   }
   I2 <- if (Q > 0) max(0, (Q - df) / Q) else 0
   # The two ingredients every prediction-interval rule uses: the RE variance of
-  # the pooled estimate (seM, HK-adjusted when method = "HK") plus tau^2, and
+  # the pooled estimate (se_re, before HK adjustment) plus tau^2, and
   # the same sum with the HK-adjusted SE, used by pi_method = "HK".
-  se_hk <- .cpas_hk(b, w2, bm, seM)$se
-  se_pi <- sqrt(seM^2 + tau2)
+  se_hk <- .cpas_hk(b, w2, bm, se_re)$se
+  se_pi <- sqrt(se_re^2 + tau2)
   se_pi_hk <- sqrt(se_hk^2 + tau2)
   pi_use <- .cpas_pi_bounds(bm, pi_method, se_pi, se_pi_hk, k)
   pi_lower <- pi_use$lower; pi_upper <- pi_use$upper
@@ -978,9 +1023,9 @@ loo_meta <- function(x) {
 #'   \eqn{100 - top_pct} percentile, so \code{top_pct = 25} means the top 25\%
 #'   are high expressors); \code{"custom"} uses the absolute threshold
 #'   \code{cut_value}, with High above it and Low at or below it. An absolute
-#'   threshold is meaningful here because every matrix served by the mirror is on
-#'   the log2 scale (Section 2.3 of the accompanying paper), so one value means
-#'   the same thing in every cohort; percentile splits are nevertheless the
+#'   threshold requires comparable measurement and normalization across cohorts;
+#'   a log2 transformation alone does not establish that comparability.
+#'   Percentile splits are nevertheless the
 #'   conventional reading of "high versus low expression", and the application
 #'   offers only median and top_pct. A per-cohort search for the best cut point
 #'   is deliberately \strong{not} offered: it would repeat, cohort by cohort,
@@ -1009,8 +1054,8 @@ loo_meta <- function(x) {
 #'     of the rule; \code{cohort_thresholds} gives the per-cohort threshold when
 #'     \code{cut = "top_pct"}}
 #'   \item{\code{n_dropped}, \code{empty_cohorts}, \code{empty_reasons}:}{the split
-#'     rule is exhaustive for the cohorts that entered (\code{n_dropped} is always
-#'     0); when a threshold or percentile rule leaves one side empty in a cohort,
+#'     \code{n_dropped} counts incomplete rows removed from included cohorts;
+#'     when any split rule leaves one side empty in a cohort,
 #'     that cohort is recorded in \code{empty_cohorts} with its reason and does not
 #'     enter the pool}
 #'   \item{\code{skipped_cohorts}, \code{skipped_reasons}:}{cohorts excluded for
@@ -1034,8 +1079,8 @@ loo_meta <- function(x) {
 #' threshold is wanted, use \code{plot_km()} cohort by cohort. The IPD route
 #' reports the log-rank p both unstratified and stratified by cohort; reporting
 #' the stratified one is recommended. In the time-point route, a time point
-#' beyond a cohort's longest follow-up reuses that cohort's last observed S(t)
-#' (\code{extend = TRUE}), and the number of cohorts actually contributing at
+#' beyond a cohort's longest follow-up excludes that cohort at that time
+#' (\code{extend = FALSE}), and the number of cohorts actually contributing at
 #' each time point is recorded in \code{meta_landmarks$k}.
 #' @examples
 #' \dontrun{
@@ -1045,7 +1090,7 @@ loo_meta <- function(x) {
 #'                    GSE37745 = cohort_merged("GSE37745", "GAPDH", type = "RFS"))
 #'    km <- cpas_km_pooled(merged, marker = "GAPDH", type = "RFS", method = "both")
 #'    km$datasets; km$dataset_endpoints; km$logrank_p
-#' 
+#'
 #'    plot_cpas_km(km)                       # pooled curve + landmark table
 #'    plot_cpas_km_perdataset(km, ncol = 2)  # one panel per cohort
 #' }
@@ -1063,6 +1108,7 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
   skipped <- list()                    # cohorts dropped for insufficient/constant data
   med <- list()                        # per-cohort marker median (reported on failure)
   thr <- list()                        # per-cohort top-percent threshold
+  dropped_n <- stats::setNames(integer(length(merged)), names(merged))
   if (identical(cut, "top_pct") &&
       (is.null(top_pct) || length(top_pct) != 1L || !is.finite(top_pct) ||
        top_pct <= 0 || top_pct >= 100))
@@ -1113,6 +1159,7 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
                                unique(v[keep])[1])
       return(NULL)
     }
+    dropped_n[[t]] <<- nrow(d) - sum(keep)
     dd <- data.frame(time = suppressWarnings(as.numeric(d[[tc]][keep])),
                      status = suppressWarnings(as.numeric(d[[sc]][keep])),
                      marker = v[keep], dataset = t)
@@ -1121,10 +1168,8 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
     ##   "top_pct"  the top top_pct% of THIS cohort by expression, i.e. High =
     ##              marker > this cohort's (100 - top_pct)th percentile;
     ##   "custom"   an absolute threshold: High = marker > cut_value, Low otherwise.
-    ## A custom absolute value is meaningful here because every matrix served by
-    ## the mirror is on the log2 scale (Section 2.3 of the accompanying paper), so
-    ## one threshold means the same thing in every cohort; it is also the rule a
-    ## reader can reproduce without recomputing percentiles. A per-cohort search
+    ## Absolute thresholds require a harmonized measurement scale; log2 alone
+    ## does not make thresholds comparable across platforms. A per-cohort search
     ## for the best cut point is deliberately not offered: that search inflates
     ## the p-value (quantified in Section 3.4) and pooling it over k cohorts
     ## compounds the inflation.
@@ -1155,7 +1200,13 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
         return(NULL)
       }
     } else {
-      dd$group <- ifelse(dd$marker > stats::median(dd$marker), "High", "Low")
+      med_cut <- stats::median(dd$marker)
+      dd$group <- ifelse(dd$marker > med_cut, "High", "Low")
+      if (length(unique(dd$group)) < 2L) {
+        empty[[t]] <<- sprintf("the median split at %g left one group empty (n = %d)",
+                               med_cut, nrow(dd))
+        return(NULL)
+      }
     }
     dd
   })
@@ -1181,7 +1232,7 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
          type, ".", call. = FALSE)
   }
   df <- do.call(rbind, parts)
-  n_dropped <- sum(is.na(df$group))          # kept for callers: both rules are exhaustive
+  n_dropped <- sum(dropped_n[names(merged) %in% unique(df$dataset)])
   df$group <- factor(df$group, levels = c("Low", "High"))
   df <- df[stats::complete.cases(df[c("time", "status", "marker", "group")]), , drop = FALSE]
   if (!sum(df$status == 1))
@@ -1224,7 +1275,13 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
   }
   out$manifest <- .cpas_manifest_new(
     analysis = "cpas_km_pooled",
-    cohorts = unique(df$dataset),
+    cohorts = unique(df$dataset), accession = unique(df$dataset),
+    family = endpoint_family(type), raw_token = unname(ep_used),
+    n_input = sum(vapply(merged, nrow, integer(1))), n_analyzed = nrow(df),
+    events = sum(df$status == 1), marker_requested = marker, marker_definition = marker,
+    fitted_covariates = "group", estimator = paste0("survival::survfit; ", method),
+    inference = paste0("Greenwood KM SE; log-rank; landmark ", meta_method),
+    analyzed_data = df, coverage_status = "measured pooled input and analysis rows",
     tokens = ep_used,
     token_role = "resolved per cohort",
     selection_rule = sprintf(paste0("the %d cohort(s) in the supplied 'merged' list that provided a usable ",
@@ -1232,9 +1289,11 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
                              length(unique(df$dataset)), type,
                              if (length(skipped)) paste(sprintf("%s (%s)", names(skipped),
                                                                unlist(skipped)), collapse = "; ") else "none"),
-    dropped_rows = if (length(skipped)) data.frame(
-      cohort = names(skipped), n_dropped = NA_integer_, reason = unlist(skipped),
-      stringsAsFactors = FALSE) else NULL,
+    dropped_rows = data.frame(
+      cohort = names(dropped_n)[names(dropped_n) %in% unique(df$dataset)],
+      n_dropped = as.integer(dropped_n[names(dropped_n) %in% unique(df$dataset)]),
+      reason = "incomplete time/status/marker rows within included cohorts",
+      stringsAsFactors = FALSE),
     cut_rule = cut_label,
     cut_points_searched = 0L,
     search_adjusted_p = NA_real_,
@@ -1243,13 +1302,20 @@ cpas_km_pooled <- function(merged, marker, type = "OS",
       stats::median(out$meta_landmarks$tau2, na.rm = TRUE) else NA_real_,
     I2 = if (!is.null(out$meta_landmarks)) stats::median(out$meta_landmarks$I2, na.rm = TRUE) else NA_real_,
     notes = c("no cut-point is searched: the split is the requested rule applied inside every cohort, so the reported p-value is not search-adjusted",
+               paste0("pooled KM is an IPD descriptive mixture or independent landmark meta-estimates; it is not a standardized clinical survival curve"),
               if (identical(cut, "top_pct")) "top-percent split" else NULL,
               if (length(empty)) paste0("cohort(s) left one-sided by the rule and not pooled: ",
                                         paste(names(empty), collapse = ", ")) else NULL))
   invisible(out)
 }
 
-# 时点生存概率 meta：按 group 对每队列在 times 上的 S(t) 做 log(-log) 逆方差合并
+# Time-point survival meta-analysis on log(-log) survival probabilities. The
+# returned curve is a set of independent landmark estimates, not a guaranteed
+# monotone Kaplan-Meier curve for a target population.
+.cpas_km_meta_critical <- function(meta_method, k) {
+  m <- toupper(as.character(meta_method)[1])
+  if (identical(m, "HK") && k >= 2L) stats::qt(.975, df = k - 1L) else 1.96
+}
 km_surv_meta <- function(df, times, meta_method = "RE") {
   grp <- sort(unique(df$group))
   res_l <- lapply(grp, function(g) {
@@ -1258,8 +1324,9 @@ km_surv_meta <- function(df, times, meta_method = "RE") {
     fits <- lapply(cg, function(cf) {
       dd <- dg[dg$dataset == cf, ]
       s <- survival::survfit(survival::Surv(time, status) ~ 1, data = dd)
-      sm <- summary(s, times = times, extend = TRUE)
-      data.frame(dataset = cf, time = sm$time, S = sm$surv, SE = sm$std.err)
+      sm <- summary(s, times = times, extend = FALSE)
+      data.frame(dataset = rep(cf, length(sm$time)), time = as.numeric(sm$time),
+                 S = as.numeric(sm$surv), SE = as.numeric(sm$std.err))
     })
     m <- do.call(rbind, fits); m <- m[is.finite(m$SE) & m$SE > 0 & m$S > 0 & m$S < 1, ]
     theta <- log(-log(m$S)); se_t <- m$SE / (m$S * abs(log(m$S)))
@@ -1269,8 +1336,8 @@ km_surv_meta <- function(df, times, meta_method = "RE") {
       po <- meta_pool(theta[m$time == tm], se_t[m$time == tm], method = meta_method)
       data.frame(group = g, time = tm, k = nrow(mm),
                  S = exp(-exp(po$logHR)),
-                 lower = exp(-exp(po$logHR + 1.96 * po$se)),
-                 upper = exp(-exp(po$logHR - 1.96 * po$se)),
+                 lower = exp(-exp(po$logHR + .cpas_km_meta_critical(meta_method, nrow(mm)) * po$se)),
+                 upper = exp(-exp(po$logHR - .cpas_km_meta_critical(meta_method, nrow(mm)) * po$se)),
                  I2 = po$I2, p_het = po$p_heterogeneity)
     })
     do.call(rbind, tab)
@@ -1283,8 +1350,9 @@ km_surv_meta <- function(df, times, meta_method = "RE") {
     fits <- lapply(unique(dg$dataset), function(cf) {
       dd <- dg[dg$dataset == cf, ]
       s <- survival::survfit(survival::Surv(time, status) ~ 1, data = dd)
-      sm <- summary(s, times = grid_t, extend = TRUE)
-      data.frame(dataset = cf, time = sm$time, S = sm$surv, SE = sm$std.err)
+      sm <- summary(s, times = grid_t, extend = FALSE)
+      data.frame(dataset = rep(cf, length(sm$time)), time = as.numeric(sm$time),
+                 S = as.numeric(sm$surv), SE = as.numeric(sm$std.err))
     })
     m <- do.call(rbind, fits)
     m <- m[is.finite(m$SE) & m$SE > 0 & m$S > 0 & m$S < 1, ]
@@ -1292,8 +1360,8 @@ km_surv_meta <- function(df, times, meta_method = "RE") {
       mm <- m[m$time == tm, ]; if (nrow(mm) < 1) return(NULL)
       po <- meta_pool(log(-log(mm$S)), mm$SE / (mm$S * abs(log(mm$S))), method = meta_method)
       data.frame(group = g, time = tm, S = exp(-exp(po$logHR)),
-                 lower = exp(-exp(po$logHR + 1.96 * po$se)),
-                 upper = exp(-exp(po$logHR - 1.96 * po$se)))
+                 lower = exp(-exp(po$logHR + .cpas_km_meta_critical(meta_method, nrow(mm)) * po$se)),
+                 upper = exp(-exp(po$logHR - .cpas_km_meta_critical(meta_method, nrow(mm)) * po$se)))
     })
     do.call(rbind, tab)
   })

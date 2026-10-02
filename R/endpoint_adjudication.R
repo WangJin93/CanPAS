@@ -199,22 +199,28 @@ endpoint_adjudication <- function(n = 80, raters = 2, seed = 20260101,
   tab$source <- .cpas_accession_source(tab$Accession)
   tab$stratum <- paste(as.character(tab$Family), tab$source, sep = " | ")
 
-  # Proportional allocation, largest remainder, capped at the stratum size.
+  # Hamilton allocation: floor the capped target's quotas, then award each
+  # residual seat to a distinct stratum, breaking ties by stratum name.
   sizes <- table(tab$stratum)
   strata <- names(sizes)
-  quota <- n * as.numeric(sizes) / sum(as.numeric(sizes))
-  take <- pmin(floor(quota), as.numeric(sizes))
+  capacity <- as.integer(sizes)
+  target <- min(n, nrow(tab))
+  quota <- target * capacity / sum(capacity)
+  take <- pmin(floor(quota), capacity)
   names(take) <- strata
-  # distribute what the floors left (and what the caps freed) by largest
-  # fractional remainder among the strata that still have room
-  while (sum(take) < min(n, nrow(tab))) {
-    room <- strata[take < as.numeric(sizes)[match(strata, names(sizes))]]
-    if (!length(room)) break
-    rem <- quota[match(room, strata)] - floor(quota[match(room, strata)])
-    ord <- order(-rem, room)
-    take[room[ord[1]]] <- take[room[ord[1]]] + 1L
+  remaining <- target - sum(take)
+  if (remaining > 0L) {
+    room <- which(take < capacity)
+    ord <- room[order(-(quota[room] - floor(quota[room])), strata[room])]
+    if (remaining > length(ord))
+      stop("Cannot allocate the requested sample within stratum capacities.",
+           call. = FALSE)
+    winners <- ord[seq_len(remaining)]
+    take[winners] <- take[winners] + 1L
   }
-  take <- take[take > 0L]
+  if (sum(take) != target || any(take < 0L | take > capacity))
+    stop("Invalid sample allocation for the available stratum capacities.",
+         call. = FALSE)
 
   # Deterministic within-stratum draw; the caller's RNG state is restored.
   old_seed <- if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE))
@@ -226,7 +232,7 @@ endpoint_adjudication <- function(n = 80, raters = 2, seed = 20260101,
     } else assign(".Random.seed", old_seed, envir = .GlobalEnv)
   }, add = TRUE)
   set.seed(as.integer(seed) %% .Machine$integer.max)
-  idx <- unlist(lapply(names(take), function(s) {
+  idx <- unlist(lapply(names(take)[take > 0L], function(s) {
     rows <- which(tab$stratum == s)
     if (length(rows) <= take[[s]]) rows else sort(sample(rows, take[[s]]))
   }), use.names = FALSE)

@@ -78,6 +78,7 @@ cif_fit <- function(df, time, status, group = NULL, times = NULL,
     stop("Column '", v, "' not found in 'df'.")
   if (!is.null(group) && !group %in% colnames(df))
     stop("Group column '", group, "' not found in 'df'.")
+  n_input <- nrow(df)
   dd <- df[, c(time, status, group), drop = FALSE]
   colnames(dd) <- c("time", "cause", if (!is.null(group)) "grp")
   dd$time <- suppressWarnings(as.numeric(dd$time))
@@ -197,6 +198,7 @@ cif_fit <- function(df, time, status, group = NULL, times = NULL,
               cut_points = cut_points,
               group_levels = if (is.null(group)) NULL else levels(dd$grp),
               group_sizes = if (is.null(group)) NULL else table(droplevels(dd$grp)))
+  out$manifest <- .cpas_manifest_new(analysis = "cif_fit", cohorts = "user-supplied data", endpoint_evidence = "not supplied; schema only", n_input = n_input, n_analyzed = nrow(dd), n_excluded = n_input - nrow(dd), events = sum(dd$cause != 0), estimator = "survival::survfit multi-state cumulative incidence", inference = sprintf("pointwise %.1f%% confidence interval", 100 * conf_level), analyzed_data = dd, seed = NA_integer_, primary_path = "cif_fit", coverage_status = "sourced_truth", notes = "Competing-event coding is taken from supplied status; latent competing events cannot be inferred.")
   class(out) <- "cpas_cif"
   out
 }
@@ -288,9 +290,10 @@ plot_cif <- function(x, cause = NULL, ...) {
 #'     (\code{"continuous"}, \code{"categorical"} or the text-coercion cases)}
 #'   \item{\code{diagnostics}}{per model, \code{ok} and, when \code{FALSE},
 #'     the reason (non-convergence, separation, infinite coefficient): the
-#'     affected coefficient is then omitted from the table and a warning is
-#'     raised, so a meaningless hazard ratio is never reported as a result}
-#'   \item{\code{fits}}{the two fitted \code{coxph} objects}
+#'     entire model table is then \code{NULL} and a warning is raised, so no
+#'     inferential rows are published for a non-estimable model}
+#'   \item{\code{fits}}{the two fitted \code{coxph} objects, retained for debugging
+#'     even when diagnostics reject the model; a failed fit is \code{NULL}}
 #' @details
 #' The cause-specific hazard is the rate of the event among patients still
 #' event-free; it answers "does the marker act on the disease process".
@@ -306,14 +309,14 @@ plot_cif <- function(x, cause = NULL, ...) {
 #' restores the evident type, reports it in \code{covariate_types}, and refuses
 #' (rather than silently reporting) a categorical covariate with more than
 #' \code{max_levels} levels. Non-convergence, separation and infinite
-#' coefficients are reported through \code{diagnostics} and excluded from the
-#' tables.
+#' coefficients are reported through \code{diagnostics}; the entire affected
+#' model table is withheld, while its fit is retained for debugging.
 #'
-#' The Fine-Gray standard errors are clustered by patient, because
-#' \code{survival::finegray()} expands every patient who has a competing event
-#' into several rows; without the cluster term the reported standard error is
-#' 17-23\% too small. The point estimates and the clustered standard errors agree
-#' with \code{cmprsk::crr()} to within 0.1\%.
+#' The Fine-Gray standard errors use a patient-clustered sandwich variance to
+#' account for repeated rows in the \code{survival::finegray()} expansion.
+#' Point estimates can be compared with \code{cmprsk::crr()} under matching
+#' censoring and covariate specifications. Variance estimates need not coincide:
+#' the weighted Cox sandwich and \code{crr()} use different variance procedures.
 #' @export
 #' @examples
 #' \dontrun{
@@ -332,7 +335,7 @@ plot_cif <- function(x, cause = NULL, ...) {
 #'    cc$covariate_types    # how each covariate was used (continuous / categorical)
 #'    cc$cause_specific     # cause-specific hazard ratios
 #'    cc$subdistribution    # Fine-Gray subdistribution hazard ratios
-#'    cc$diagnostics        # ok + reason per model; unusable coefficients are omitted
+#'    cc$diagnostics        # ok + reason per model; rejected tables are NULL
 #' }
 competing_risk_COX <- function(df, time, status, covariates = NULL, etype = 1,
                                conf_level = 0.95, max_levels = 20L) {
@@ -400,8 +403,8 @@ competing_risk_COX <- function(df, time, status, covariates = NULL, etype = 1,
             paste(sprintf("%s -> %s", coerced, cov_types[coerced]), collapse = "; "),
             ". Wrap the column in factor() if it should be categorical.")
 
-  # a coefficient that is infinite, or whose standard error is unusable, is not
-  # a result: it is dropped from the table and reported in $diagnostics
+  # Only models accepted by diagnostics are tidied; numeric checks below are
+  # an additional guard against unusable coefficients.
   tidy_fit <- function(fit, n_pat) {
     if (is.null(fit)) return(NULL)          # the fit failed: diagnostics say why
     b <- stats::coef(fit); V <- stats::vcov(fit)
@@ -444,18 +447,16 @@ competing_risk_COX <- function(df, time, status, covariates = NULL, etype = 1,
 
   # ---- 2. Fine-Gray subdistribution hazard (weighted expansion) ----
   fg_data <- dd[, c(time, status, covariates), drop = FALSE]
-  # The subdistribution variance must be clustered by PATIENT: finegray()
-  # duplicates every patient who has a competing event, and the weighted fit
-  # ignores that within-patient correlation. The naive model-based standard
-  # error is then far too small (measured: 17-23% below the cmprsk::crr
-  # variance). finegray() keeps only the variables named in its formula, so the
-  # patient id is carried through as an extra term of the EXPANSION formula and
-  # is deliberately left out of the Cox formula below.
+  # Keep censoring as the first state even when no censored rows are observed.
+  fg_data[[status]] <- factor(fg_data[[status]], levels = c(0, ev))
+  # Carry patient ids through the expansion for the clustered sandwich variance;
+  # they are not covariates in the weighted Cox model.
   fg_data$.cpas_pid <- seq_len(nrow(fg_data))
-  fg_fml <- stats::as.formula(sprintf("survival::Surv(`%s`, factor(`%s`)) ~ %s + .cpas_pid",
+  fg_fml <- stats::as.formula(sprintf("survival::Surv(`%s`, `%s`) ~ %s + .cpas_pid",
                                       time, status,
                                       paste(sprintf("`%s`", covariates), collapse = " + ")))
-  fg <- survival::finegray(fg_fml, data = fg_data, etype = etype)
+  # finegray matches state labels, not positions among the observed event codes.
+  fg <- survival::finegray(fg_fml, data = fg_data, etype = as.character(etype))
   if (!".cpas_pid" %in% colnames(fg))
     stop("finegray() did not carry the patient id; the subdistribution standard ",
          "error would be invalid. Please report this as a bug.", call. = FALSE)
@@ -479,7 +480,7 @@ competing_risk_COX <- function(df, time, status, covariates = NULL, etype = 1,
     d <- diagnostics[[nm]]
     if (!d$ok)
       warning("The ", gsub("_", "-", nm), " model is not fully estimable: ",
-              d$reason, ". The affected coefficient(s) are omitted from the table.",
+              d$reason, ". The model table is withheld; the fit is retained for debugging.",
               call. = FALSE)
   }
 
@@ -488,8 +489,8 @@ competing_risk_COX <- function(df, time, status, covariates = NULL, etype = 1,
                                   conf_level = conf_level,
                                   max_levels = max_levels,
                                   analysis_time = Sys.time()),
-              cause_specific = tidy_fit(cs_fit, nrow(dd)),
-              subdistribution = tidy_fit(fg_fit, nrow(dd)),
+              cause_specific = if (isTRUE(cs_diag$ok)) tidy_fit(cs_fit, nrow(dd)) else NULL,
+              subdistribution = if (isTRUE(fg_diag$ok)) tidy_fit(fg_fit, nrow(dd)) else NULL,
               n = nrow(dd),
               events_interest = sum(dd[[status]] == etype),
               events_competing = sum(!dd[[status]] %in% c(0, etype)),
@@ -498,6 +499,7 @@ competing_risk_COX <- function(df, time, status, covariates = NULL, etype = 1,
               covariate_types = cov_types,
               diagnostics = diagnostics,
               fits = list(cause_specific = cs_fit, subdistribution = fg_fit))
+  out$manifest <- .cpas_manifest_new(analysis = "competing_risk_COX", cohorts = "user-supplied data", endpoint_evidence = "not supplied; schema only", n_input = nrow(df), n_analyzed = nrow(dd), n_excluded = nrow(df) - nrow(dd), events = sum(dd[[status]] != 0), fitted_covariates = covariates, estimator = "survival::coxph cause-specific and Fine-Gray", inference = sprintf("Wald %.1f%% confidence intervals", 100 * conf_level), analyzed_data = dd, seed = NA_integer_, primary_path = "competing_risk_COX", coverage_status = "sourced_truth", notes = "Competing-event coding is taken from supplied status; latent competing events cannot be inferred.")
   class(out) <- "cpas_competing"
   out
 }

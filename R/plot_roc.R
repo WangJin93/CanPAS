@@ -12,7 +12,9 @@
 #' or \code{"NNE"}.
 #' @param span Span for \code{method = "NNE"} (ignored for KM).
 #' @return A ggplot object; the estimated AUC is attached as attribute
-#' \code{"AUC"} of the returned object.
+#' \code{"AUC"} of the returned object. Attributes \code{"analysis_metadata"},
+#' \code{"roc_data"} and \code{"manifest"} retain the analysis counts, coordinates
+#' and provenance. No AUC confidence interval is supplied.
 #' @details Rows with missing time/status/marker are removed first. The
 #' \code{<type>_time} values are interpreted as the same unit as
 #' \code{predict.time}.
@@ -36,7 +38,9 @@ plot_roc <- function(df, type = "OS", marker,
   d[[tc]] <- suppressWarnings(as.numeric(d[[tc]]))
   d[[sc]] <- suppressWarnings(as.numeric(d[[sc]]))
   d[[marker]] <- suppressWarnings(as.numeric(d[[marker]]))
-  d <- d[stats::complete.cases(d), , drop = FALSE]
+  n_input <- nrow(d)
+  keep <- stats::complete.cases(d) & is.finite(d[[tc]]) & is.finite(d[[marker]])
+  d <- d[keep, , drop = FALSE]
   if (any(!is.na(d[[sc]]) & !d[[sc]] %in% c(0, 1)))
     stop("The status column must be coded 0 (censored) / 1 (event).")
   if (any(!is.na(d[[tc]]) & d[[tc]] < 0))
@@ -85,5 +89,21 @@ plot_roc <- function(df, type = "OS", marker,
     theme_bw() +
     theme(plot.title = element_text(hjust = 0.5))
   attr(p, "AUC") <- roc_obj$AUC
+  attr(p, "roc_data") <- roc_data
+  attr(p, "analysis_metadata") <- list(n_input = n_input, n = nrow(d),
+    n_dropped = n_input - nrow(d), endpoint = type, marker = marker,
+    predict_time = predict.time, method = method, span = args$span,
+    cases = n_case, controls = n_ctrl,
+    censored_before_horizon = sum(d[[sc]] == 0 & d[[tc]] <= predict.time))
+  attr(p, "manifest") <- .cpas_manifest_new(
+    analysis = "plot_roc", token = type,
+    n_input = n_input, n_analyzed = nrow(d), n_excluded = n_input - nrow(d),
+    events = sum(d[[sc]] == 1), marker_requested = marker,
+    estimator = paste0("survivalROC::survivalROC ", method),
+    inference = "descriptive AUC; no confidence interval", analyzed_data = d,
+    dropped_rows = data.frame(cohort = "user-supplied data", n_dropped = n_input - nrow(d),
+      reason = "incomplete or non-finite time/status/marker", stringsAsFactors = FALSE),
+    notes = c(paste0("survivalROC method = ", method, "; prediction horizon = ", predict.time),
+      "AUC is descriptive; no confidence interval or external predictive validation is supplied"))
   p
 }
