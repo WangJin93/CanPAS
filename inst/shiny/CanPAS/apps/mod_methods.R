@@ -84,6 +84,13 @@ ui_mod_methods <- function(id) {
                   " in the Datasets table and in the token reported with a run, and recorded
                   in the ", tags$code("EndpointDerived"),
                   " catalog column."),
+          tags$li(tags$b("Every cohort × family cell is recorded in a shipped companion table."),
+                  " ", tags$code("endpoint_semantics()"),
+                  " returns one row per cohort and family (197 × 5 = 985) carrying the token, its
+                  role, the source field it was read from, and the event definition, time origin,
+                  censoring rule and competing-event status wherever the deposit records them; ",
+                  tags$code('endpoint_pooling_class(accession, family)'),
+                  " returns the pooling class of a single cell."),
           tags$li(tags$b("An endpoint is annotated only when the data support it."),
                   " A token needs events and real follow-up: in GSE40272 the RFS censored
                   patients all have time 0 (no follow-up time), so RFS was not annotated,
@@ -172,8 +179,7 @@ ui_mod_methods <- function(id) {
         p("Some cohorts in the catalog are not independent: a study measured on two
           platforms appears as two accessions, and a few series were deposited twice
           under different GSE numbers. Comparing the sample titles across all cohorts
-          (", tags$code("26_cohort_overlap.R"), ") finds 30 such pairs (33 cohorts) in
-          14 groups,
+          (", tags$code("26_cohort_overlap.R"), ") finds 30 such pairs,
           e.g. GSE3494_GPL96/GPL97 (179 shared patients), GSE37642_GPL96/GPL97 (422),
           GSE9782_GPL96/GPL97 (264), GSE17536 and GSE17537 against GSE17538_GPL570
           (177 and 55), GSE2990 against GSE6532_GPL96 (189), GSE11969 against
@@ -184,10 +190,14 @@ ui_mod_methods <- function(id) {
           more than once, which narrows the confidence interval and biases I², Q and
           the prediction interval — the reported precision is then partly an artefact
           of double counting. The catalog records the group in ", tags$code("CohortGroup"),
-          " and a readable flag in ", tags$code("Note"), "; the Datasets page shows the
-          note and every multi-dataset page warns when the current selection contains
-          two members of one group. The same register ships with the package: ",
-          tags$code("cohort_overlap()"), " returns it, and ",
+          " and a readable flag in ", tags$code("Note"),
+          " (14 groups covering 33 of the 197 catalog cohorts); the Datasets page shows
+          the note and every multi-dataset page warns when the current selection contains
+          two members of one group. ",
+          tags$code("116_build_cohort_overlap_suppl.R"),
+          " publishes the register as the shipped companion table, with each pair's basis
+          and the evidence it was verified against. ", tags$code("cohort_overlap()"),
+          " returns it, and ",
           tags$code("cpas_meta(overlap = )"), " acts on it - ",
           tags$code('"warn"'), " (default) proceeds, names the pair(s) and records them in ",
           tags$code("$pooled$overlap_pairs"), "; ", tags$code('"refuse"'),
@@ -235,7 +245,7 @@ server_mod_methods <- function(id, dataset_info) {
 
     output$pipeline <- renderUI({
       d <- data.frame(
-        Step = c("01 parse", "02 / 12 platform map", "03 survival table",
+        Step = c("00 output root", "01 parse", "02 / 12 platform map", "03 survival table",
                  "04 QC", "05 catalog plan", "06 mirror upload",
                  "07 clinical standardisation", "08 verification",
                  "09 survival sync", "10 CGGA", "11 endpoint families",
@@ -249,8 +259,13 @@ server_mod_methods <- function(id, dataset_info) {
                  "100–102 relaxed gate & platform names",
                  "103–107 EMBL-EBI platform maps, cohort builds & registration",
                  "39–42 GSE1379 & TCGA-CHOL/DLBC",
-                 "110–112 GSE205209 (NanoString)"),
-        Script = c("01_parse_gse.R", "02_gpl_map.R, 12_gpl_map_symbol.R",
+                 "110–112 GSE205209 (NanoString)",
+                 "113 platform-map sweep",
+                 "114 endpoint semantics",
+                 "116 overlap register",
+                 "117 platform coverage",
+                 "118 catalog hardening columns"),
+        Script = c("00_output_root.R", "01_parse_gse.R", "02_gpl_map.R, 12_gpl_map_symbol.R",
                    "03_surv_table.R", "04_qc_report.R", "05_dataset_plan.R",
                    "06_upload_db.R", "07_standardize_clinical.R, 07b, 07c",
                    "08_verify_normalization.R", "09_update_db_surv.R",
@@ -267,8 +282,14 @@ server_mod_methods <- function(id, dataset_info) {
                    "100_build_relaxed_gate.R, 101_update_catalog_relaxed_gate.R, 102_extend_gpl4133_agilent_name.R",
                    "103_build_embl_gpl_maps.R, 104_build_embl_cohorts.R, 105_update_catalog_embl.R, 106_build_embl_step2.R, 107_register_embl_step2.R",
                    "39_build_gse1379_surv.R, 40_add_tcga_chol_dlbc.R, 41_register_final3_rows.R, 42_upload_gpl1223.R",
-                   "110_build_gse205209.R, 111_register_gse205209.R, 112_upload_gpl27956.R"),
+                   "110_build_gse205209.R, 111_register_gse205209.R, 112_upload_gpl27956.R",
+                   "113_sweep_gpl_mirror_divergence.R",
+                   "114_build_endpoint_semantics.R",
+                   "116_build_cohort_overlap_suppl.R",
+                   "117_build_platform_coverage.R",
+                   "118_update_catalog_hardening_cols.R"),
         What = c(
+          "Shared, env-overridable output root for every step (CPAS_DATA_ROOT / CPAS_OUT_ROOT); defines the path helpers and writes nothing itself",
           "GEO series matrix -> expression table (ID_REF + one column per sample)",
           "Platform annotation -> probe to Entrez map; symbol-based mapping when the platform has no Entrez column",
           "Clinical/survival table per cohort (endpoint time in years, status 0/1)",
@@ -295,18 +316,32 @@ server_mod_methods <- function(id, dataset_info) {
           "Two small cohorts built and catalogued under the relaxed gate (N >= 30); GPL4133 Agilent platform name extended",
           "EMBL-EBI (ArrayExpress/BioStudies) cohorts built from the deposit's own SDRF annotation and processed matrix (CEL files re-processed by RMA where none was deposited); platform maps built from the GEO platform SOFT for GPL16686 and GPL17585, which have no annotation package; 14 cohorts catalogued at patient level and their endpoint families registered",
           "GSE1379 survival table rebuilt from the series-matrix !Sample_description free text (the series has no characteristics rows); TCGA-CHOL and TCGA-DLBC added from UCSC Xena with local clinical tables; the three new catalog rows registered; GPL1223 platform map uploaded",
-          "GSE205209 (endometrial, NanoString PanCancer IO 360) built from the series matrix: 60 paired primary/metastatic arrays deduplicated primary-preferred to 29 subjects, 28 of them analysable (USC9 has no usable array); OS 21 events among the 28; GPL27956 platform map (756 probe-gene rows) uploaded"),
+          "GSE205209 (endometrial, NanoString PanCancer IO 360) built from the series matrix: 60 paired primary/metastatic arrays deduplicated primary-preferred to 29 subjects, 28 of them analysable (USC9 has no usable array); OS 21 events among the 28; GPL27956 platform map (756 probe-gene rows) uploaded",
+          "Read-only sweep of every catalog platform table: mirror rows against the local map's annotated probes, reported on both counting bases (annotated probes, and probe-gene pairs after expansion)",
+          "Endpoints as data: one row per cohort x family (197 x 5 = 985) with the token, its role, the source field, and the event definition, time origin, censoring rule, competing-event status, derived flag and pooling class",
+          "Publishes the shared-patient register (30 pairs, each with its basis and the evidence it was verified against) as the shipped overlap companion table",
+          "Read-only platform annotation coverage and policy per platform table: local probe and annotated-probe counts, gene coverage, mirror rows, probe-gene representation, divergence and an admission policy",
+          "Appends the admission and convention columns (join-restricted N, drop reasons, admission gate, gate decision, overlap group, N convention) and rebuilds the dataset catalog cell for cell"),
         check.names = FALSE, stringsAsFactors = FALSE)
       tagList(
         .methods_tbl(d),
-        p(class = "note", tags$code("pipeline/R/"), " holds ", tags$b("57 numbered steps"),
-          " (01–27, 35–42, 90–107, 110–112; the table above lists every one of them) plus 9 helper,
+        p(class = "note", tags$code("pipeline/R/"), " holds ", tags$b("63 numbered scripts"),
+          " (00; 01–27 including 07b and 07c; 35–42; 90–99; 100–107; 110–114; 116–118 — the
+          table above lists every one of them) plus 9 helper,
           demo and validation scripts (", tags$code("batch_integrate.R"),
           ", ", tags$code("batch_integrate2.R"), ", ", tags$code("demo_meta_lung.R"),
           ", ", tags$code("demo_tcga_integration.R"), ", ", tags$code("demo_tcga_ondemand.R"),
           ", ", tags$code("demo_unified_reader.R"), ", ", tags$code("test_cpas_dataset.R"),
           ", ", tags$code("test_cpas_GSE44001.R"), ", ", tags$code("validate_cpas.R"),
-          "), i.e. 66 R files.")
+          ") and one R Markdown report (", tags$code("CPAS_full_test_report.Rmd"),
+          "), i.e. 72 R files."),
+        p(class = "note", "The package ships a consolidated entry point for the release
+          pipeline (", tags$code("inst/pipeline/run_pipeline.R"), ") together with a frozen
+          step inventory (", tags$code("cpas_pipeline_steps()"), ", 67 rows) that resolves
+          every step to its consolidated file. Derived outputs of the curation steps land
+          under an explicit, env-overridable root (", tags$code("CPAS_OUT_ROOT"),
+          ", default ", tags$code("<CPAS_DATA_ROOT>/pipeline/out"),
+          "); ", tags$code("pipeline/OUTPUT_LAYOUT.md"), " records the layout.")
       )
     })
 

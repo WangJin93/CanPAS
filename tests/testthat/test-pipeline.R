@@ -166,3 +166,60 @@ test_that("the original function bodies survive the consolidation unchanged", {
   expect_gt(checked, 0L)
   expect_identical(mismatches, character(0))
 })
+
+# --------------------------------------------------------------------------
+# The Methods page is the human-readable index of pipeline/R/
+# --------------------------------------------------------------------------
+# The app's Methods page prints the pipeline table by hand, so it can fall
+# behind the tree it documents.  This test pins the two together: every
+# numbered script in pipeline/R/ must be named in the table, and every script
+# the table names must exist in the tree.
+.methods_pipeline_table <- function(path) {
+  cands <- list()
+  collect <- function(e) {
+    if (is.call(e)) {
+      if (identical(as.character(e[[1]])[1], "data.frame"))
+        cands[[length(cands) + 1L]] <<- e
+      for (i in seq_along(e)) {
+        el <- e[[i]]
+        if (!is.null(el) && (is.call(el) || is.pairlist(el))) try(collect(el), silent = TRUE)
+      }
+    }
+    invisible(NULL)
+  }
+  for (e in parse(path)) collect(e)
+  for (cl in cands) {
+    d <- try(eval(cl, envir = new.env(parent = baseenv())), silent = TRUE)
+    if (is.data.frame(d) && all(c("Step", "Script", "What") %in% names(d))) return(d)
+  }
+  NULL
+}
+
+# Step ids are the leading token of a script name: "113_sweep_gpl.R" -> "113",
+# "07b" -> "07b".  Digits further inside a name (gse108474) are not ids.
+.step_ids <- function(x) {
+  toks <- trimws(unlist(strsplit(x, ",")))
+  toks <- toks[nzchar(toks)]
+  ids <- sub("^([0-9]+[a-z]?)_.*$", "\\1", toks)
+  sort(unique(ids[grepl("^[0-9]+[a-z]?$", ids)]))
+}
+
+test_that("the Methods page pipeline index matches pipeline/R/", {
+  root <- Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS")
+  src <- file.path(root, "pipeline", "R")
+  skip_if(!dir.exists(src), "the unshipped pipeline/R/ source tree is not available")
+  app <- file.path("..", "..", "inst", "shiny", "CanPAS", "apps", "mod_methods.R")
+  if (!file.exists(app))
+    app <- system.file("shiny", "CanPAS", "apps", "mod_methods.R", package = "CanPAS")
+  skip_if(!nzchar(app) || !file.exists(app), "the app's mod_methods.R is not available")
+
+  d <- .methods_pipeline_table(app)
+  expect_false(is.null(d))
+  expect_true(nrow(d) >= 30L)
+
+  listed  <- .step_ids(paste(d$Script, collapse = ", "))
+  present <- .step_ids(list.files(src, pattern = "^[0-9]+[a-z]?_.*\\.R$"))
+  expect_gt(length(present), 50L)
+  # neither direction may drift: no unlisted script, no named-but-absent script
+  expect_setequal(listed, present)
+})
