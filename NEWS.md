@@ -116,14 +116,14 @@ bundled Shiny application; this section documents the state of that first releas
 
 ### B7 - reproducibility index: `cpas_reproducibility_index()` + `cpas_pipeline_steps()`
 
-* `cpas_pipeline_steps()` returns the **67 curation steps** (canonical run order,
+* `cpas_pipeline_steps()` returns the **72 curation steps** (canonical run order,
   step id, original script name, what the step does, whether it is a numbered
-  construction/repair step - 58 - or a helper/demo/validation script - 9, and the
+  construction/repair step - 63 - or a helper/demo/validation script - 9, and the
   consolidated `inst/pipeline/` file that provides it), resolved with
   `system.file()` and cross-checked against the shipped entry point's own step
   table (`matches_entry_point`).
 * `cpas_reproducibility_index()` returns one tidy data frame over the whole
-  material: the 67 steps plus 14 material rows - the **exclusion register (109
+  material: the 72 steps plus 14 material rows - the **exclusion register (109
   records)** and the other three registers, the repair/defect records (the
   1.0.0 verified-defect report, the known-defect report, the read-only-table
   repair log, the competing-risks re-audit), the frozen-state records and the
@@ -270,7 +270,7 @@ opt-in reversible and every change is recorded in the result.
 ## The curation pipeline now ships inside the package (`inst/pipeline/`, scripts only) (2026-09-30)
 
 The scripted pipeline that builds and maintains the curated mirror is now part of the
-released package. The 67 standalone step scripts that were run from a separate
+released package. The 72 standalone step scripts that were run from a separate
 `pipeline/R/` checkout are consolidated into nine files under `inst/pipeline/`, together
 with the entry point `run_pipeline.R`, a `README.md` and `.Renviron.example`. Nothing is
 executed at install time and **no data file is added** — the scripts operate on an external
@@ -283,13 +283,13 @@ data root (`CPAS_DATA_ROOT`), exactly as before.
 * Every original script is embedded **byte-for-byte** inside a zero-argument runner
   (`run_<script>()`), so sourcing a consolidated file defines functions only, has no side
   effects, and each step still runs in its own process. All 270 function definitions keep an
-  identical deparsed body, and 66 of the 67 scripts appear verbatim (the exception is the
+  identical deparsed body, and 71 of the 72 scripts appear verbatim (the exception is the
   four-line preamble of `07b_split_tnm.R` that re-read its sibling script from
   `<root>/pipeline/R/`; the consolidated file already carries that script verbatim and
   exposes the same normalizers, which is what makes the step work without the old layout).
 * `run_pipeline.R` keeps the previous interface — `--list`, `--check`, `--from/--to`,
   `--only`, `--dry-run` — the same log and the same one-process-per-step behaviour; its step
-  table now covers all 67 scripts and names the consolidated file each one lives in.
+  table now covers all 72 scripts and names the consolidated file each one lives in.
 * Two pieces of documented glue are added: `05_clinical_and_scale.R` exposes the clinical
   normalizers (`MISS_TOKENS`, `is_missing_token`, `strip_missing`, `clean_text`, `norm_tnm`)
   at file level, and `04_cohort_builds.R` exposes `scale_verdict()`, in both cases because
@@ -391,8 +391,8 @@ modified (the one catalog edit is the appended row below).
   byte-identical to `pipeline/out/excluded.csv`; Additional file 1 was regenerated at
   **197 x 5 = 985 cells** with 0 packaged-vs-CSV differences, 0
   `endpoint_resolve`-vs-`endpoint_options` disagreements, 0 intra-family conflicts and 0
-  unmapped tokens; the curation-step inventory now reads **57 numbered steps / 66 R files**
-  (new: `110`-`112`); Figure 2 and Figure 9 were re-rendered from the 197-row build and the
+  unmapped tokens; the curation-step inventory was extended for the new cohort builds
+  (new steps: `110`-`112`); Figure 2 and Figure 9 were re-rendered from the 197-row build and the
   Word/PDF export re-run.
 
 ## Catalog growth to 196 cohorts: GSE1379 restored, TCGA-CHOL and TCGA-DLBC added (2026-09-25)
@@ -442,7 +442,7 @@ modified.
   documented, and the paper's Table 1 Block C count and its cross-reference were corrected
   (109, pointing at Additional file 2 rather than Additional file 3).
 * **App and Help text refreshed with the new counts**, the new overlap pair and the new
-  curation steps 39-42 (54 numbered steps, 63 R files); Figure 2 and Figure 9 were re-rendered
+  curation steps 39-42; Figure 2 and Figure 9 were re-rendered
   from the 196-row build and the Word/PDF export re-run.
 
 ## Catalog growth to 193 cohorts: fourteen EMBL-EBI cohorts added (2026-09-25)

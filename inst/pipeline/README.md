@@ -72,7 +72,7 @@ run.  The full per-file list is `pipeline/OUTPUT_LAYOUT.md` in the source tree.
 
 ## Layout
 
-The original pipeline was 67 standalone `pipeline/R/*.R` scripts that were run
+The original pipeline was 72 standalone `pipeline/R/*.R` scripts that were run
 one process per script.  They are consolidated here into nine files.  Each
 original script is embedded **byte-for-byte** inside a runner function
 `run_<script>()`, so sourcing a file defines functions only and has no side
@@ -120,22 +120,23 @@ run_07b_split_tnm()          # equivalent to: Rscript pipeline/R/07b_split_tnm.R
 
 ## Notes on the consolidation
 
-* Every function definition of the original 67 scripts is present with an
-  **identical deparsed body**: **491 one-level function definitions, 0
+* Every function definition of the original 72 scripts is present with an
+  **identical deparsed body**: **512 one-level function definitions, 0
   altered**, and the set of original function names is a subset of the merged
-  set.  *Counting rule* (the one this figure was verified under): each of the 67
+  set.  *Counting rule* (the one this figure was verified under): each of the 72
   scripts is parsed and every `name <- function(...)` binding is counted whose
   assignment statement sits at the top level of the file or one nesting level
   inside it - that is, every binding a single `source()` of the script
   materialises; a definition created only inside another function body is not
   counted.  Parsing the nine consolidated files the same way (one
-  `run_<script>()` runner per script, 67 runners) and comparing the deparsed
-  function bodies reproduces 491 definitions with 0 differing.  The earlier text
+  `run_<script>()` runner per script, 72 runners) and comparing the deparsed
+  function bodies reproduces 512 definitions with 0 differing.  The earlier text
   claimed 270 deparsed bodies; that number does not reproduce under this rule or,
-  as far as we could determine, under any other (top-level definitions of the 67
-  scripts: 268; definitions at any depth including those inside function bodies:
-  513), so it is replaced by the verified figure above.  The whole text of 66
-  of the 67 scripts appears byte-for-byte in the consolidated files.
+  as far as we could determine, under any other (definitions at any depth,
+  including those inside function bodies: 534), so it is replaced by the verified
+  figure above.  The whole text of 71 of the 72 scripts appears byte-for-byte in
+  the consolidated files; the single substitution is the preamble of
+  `07b_split_tnm.R`, which is documented below.
 * Names that several scripts defined differently (`note`, `num`, `%||%`,
   `parseGSEMatrix`, ...) are no longer ambiguous: each embedded script keeps its
   own scope, exactly as when it ran as its own `Rscript`.

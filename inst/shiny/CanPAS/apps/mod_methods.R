@@ -337,7 +337,7 @@ server_mod_methods <- function(id, dataset_info) {
           "), i.e. 72 R files."),
         p(class = "note", "The package ships a consolidated entry point for the release
           pipeline (", tags$code("inst/pipeline/run_pipeline.R"), ") together with a frozen
-          step inventory (", tags$code("cpas_pipeline_steps()"), ", 67 rows) that resolves
+          step inventory (", tags$code("cpas_pipeline_steps()"), ", 72 rows) that resolves
           every step to its consolidated file. Derived outputs of the curation steps land
           under an explicit, env-overridable root (", tags$code("CPAS_OUT_ROOT"),
           ", default ", tags$code("<CPAS_DATA_ROOT>/pipeline/out"),

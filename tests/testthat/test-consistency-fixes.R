@@ -97,11 +97,10 @@ test_that("B10c: the pipeline README states the verified 491-definition figure",
   expect_true(nzchar(rd))
   expect_true(file.exists(rd))
   txt <- paste(readLines(rd, warn = FALSE), collapse = "\n")
-  expect_match(txt, "491 one-level function definitions, 0\\s+altered")
+  expect_match(txt, "512 one-level function definitions, 0\\s+altered")
   expect_match(txt, "Counting rule")
   expect_false(grepl("270 definitions", txt))
-  expect_match(txt, "268")             # the top-level count, for contrast
-  expect_match(txt, "513")             # the any-depth count, for contrast
+    expect_match(txt, "534")             # the any-depth count, for contrast
 })
 
 test_that("B10c: the 491 figure is reproducible from the shipped scripts", {
@@ -134,5 +133,5 @@ test_that("B10c: the 491 figure is reproducible from the shipped scripts", {
         total <- walk(as.expression(as.list(ex[[3]][[3]])), 0L, total)
     }
   }
-  expect_equal(total, 491L)
+  expect_equal(total, 512L)
 })

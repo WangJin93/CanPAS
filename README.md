@@ -164,7 +164,7 @@ attr(sheet, "pooling_class_vocabulary")
 ## ... the raters fill it in; then:
 endpoint_agreement(sheet)$per_field[, c("field", "raw_agreement", "kappa")]
 
-## --- reproducibility index (67 steps, registers, additional files) ---------
+## --- reproducibility index (72 steps, registers, additional files) ---------
 idx <- cpas_reproducibility_index()
 table(idx$section)
 subset(idx, section == "curation_step")[, c("number", "script", "consolidated_file")]
@@ -419,10 +419,10 @@ refers to; it is not a separate download.
 
 * Nine consolidated files, `01_ingest_parse.R` … `09_analysis_and_figures.R`, plus the
   entry point `run_pipeline.R`, a `README.md` and `.Renviron.example`. They consolidate
-  the 67 standalone step scripts the pipeline was originally run from.
+  the 72 standalone step scripts the pipeline was originally run from.
 * Every original script is embedded **byte-for-byte** inside a zero-argument runner
   (`run_<script>()`), so `source()`-ing a file defines functions and has no side
-  effects, and each step still runs in its own process. All **491 one-level function
+  effects, and each step still runs in its own process. All **512 one-level function
   definitions** keep an identical deparsed body (0 altered; counting rule in
   `inst/pipeline/README.md`).
 * **No data files are added to the package.** The pipeline reads and writes an external
@@ -445,11 +445,11 @@ Rscript "$(Rscript -e 'cat(system.file("pipeline","run_pipeline.R",package="CanP
 ## Reproducibility index
 
 `cpas_reproducibility_index()` returns a tidy data frame indexing the
-reproducibility material: the **67 curation steps** (canonical order, original
+reproducibility material: the **72 curation steps** (canonical order, original
 script name, what the step does, and the consolidated `inst/pipeline/` file that
 provides it), the **exclusion register** (109 records, with its location), the
 repair and defect records, the frozen-state record and the Additional-file
-layout. `cpas_pipeline_steps()` is the companion that returns just the 67 steps.
+layout. `cpas_pipeline_steps()` is the companion that returns just the 72 steps.
 Both read two small CSVs shipped in `inst/reproducibility/` and resolve the
 packaged files with `system.file()`, so they work offline from an installed
 package; the registers themselves stay in the project tree and are reported by
