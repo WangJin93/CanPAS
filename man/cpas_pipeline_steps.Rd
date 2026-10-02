@@ -2,7 +2,7 @@
 % Please edit documentation in R/cpas_reproducibility.R
 \name{cpas_pipeline_steps}
 \alias{cpas_pipeline_steps}
-\title{The 67 curation steps of the shipped pipeline}
+\title{The 72 curation steps of the shipped pipeline}
 \usage{
 cpas_pipeline_steps(package = "CanPAS")
 }
@@ -11,12 +11,12 @@ cpas_pipeline_steps(package = "CanPAS")
 \code{"CanPAS"}); mainly useful for tests.}
 }
 \value{
-A data frame with one row per step (67 rows):
-  \item{\code{number}}{canonical run order, 1..67}
+A data frame with one row per step (72 rows):
+  \item{\code{number}}{canonical run order, 1..72}
   \item{\code{id}}{the step id used by \code{run_pipeline.R} (e.g. \code{"07b"})}
   \item{\code{script}}{the original script name (e.g. \code{"07b_split_tnm.R"})}
   \item{\code{what_it_does}}{one-line description of the step}
-  \item{\code{kind}}{\code{"numbered construction / repair step"} (58 rows) or
+  \item{\code{kind}}{\code{"numbered construction / repair step"} (63 rows) or
     \code{"helper / demo / validation script"} (9 rows)}
   \item{\code{consolidated_file}}{the \code{inst/pipeline/} file that provides
     the step}
@@ -43,7 +43,7 @@ point is visible rather than silent.
 }
 \examples{
 steps <- cpas_pipeline_steps()
-nrow(steps)                                  # 67
+nrow(steps)                                  # 72
 table(steps$kind)
 head(steps[, c("number", "script", "consolidated_file")])
 }

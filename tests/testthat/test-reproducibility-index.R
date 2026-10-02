@@ -1,13 +1,13 @@
 # cpas_reproducibility_index() / cpas_pipeline_steps() (spec B7) --------------
 # Offline: the index is read from the shipped CSVs and resolved with system.file.
 
-test_that("the step inventory has the 67 steps and resolves every consolidated file", {
+test_that("the step inventory has the 72 steps and resolves every consolidated file", {
   st <- cpas_pipeline_steps()
-  expect_equal(nrow(st), 67L)
-  expect_identical(st$number, 1:67)
-  expect_equal(sum(st$kind == "numbered construction / repair step"), 58L)
+  expect_equal(nrow(st), 72L)
+  expect_identical(st$number, 1:72)
+  expect_equal(sum(st$kind == "numbered construction / repair step"), 63L)
   expect_equal(sum(st$kind == "helper / demo / validation script"), 9L)
-  expect_equal(length(unique(st$script)), 67L)
+  expect_equal(length(unique(st$script)), 72L)
   expect_setequal(unique(st$consolidated_file),
                   c("01_ingest_parse.R", "02_platform_maps.R", "03_survival_tables.R",
                     "04_cohort_builds.R", "05_clinical_and_scale.R",
@@ -18,13 +18,14 @@ test_that("the step inventory has the 67 steps and resolves every consolidated f
   expect_true(all(basename(st$installed_path) == st$consolidated_file))
   expect_true(all(nzchar(st$what_it_does)))
   # every id the entry point lists is present exactly once
-  expect_setequal(st$id, c("01", "02", "03", "04", "05", "06", "07", "07b", "07c",
+  expect_setequal(st$id, c("00", "01", "02", "03", "04", "05", "06", "07", "07b", "07c",
                            "08", "09", "10", "11", "12", "13", "14", "15", "16",
                            "17", "18", "19", "20", "21", "22", "23", "24", "25",
                            "26", "27", "35", "36", "37", "38", "39", "40", "41",
                            "42", "90", "91", "92", "93", "94", "95", "96", "98",
                            "99", "100", "101", "102", "103", "104", "105", "106",
-                           "107", "110", "111", "112", "113", "batch_integrate",
+                           "107", "110", "111", "112", "113", "114", "116", "117",
+                           "118", "batch_integrate",
                            "batch_integrate2", "demo_meta_lung",
                            "demo_tcga_integration", "demo_tcga_ondemand",
                            "demo_unified_reader", "test_cpas_GSE44001",
@@ -37,8 +38,8 @@ test_that("the step inventory has the 67 steps and resolves every consolidated f
 test_that("the index covers the steps and the reproducibility material", {
   idx <- cpas_reproducibility_index()
   expect_s3_class(idx, "data.frame")
-  expect_equal(nrow(idx), 67L + 14L)
-  expect_identical(attr(idx, "n_steps"), 67L)
+  expect_equal(nrow(idx), 72L + 14L)
+  expect_identical(attr(idx, "n_steps"), 72L)
   expect_identical(attr(idx, "n_materials"), 14L)
   expect_setequal(unique(idx$section),
                   c("curation_step", "register", "repair_record",
@@ -48,8 +49,8 @@ test_that("the index covers the steps and the reproducibility material", {
                     "installed_path", "available", "resolved_source") %in%
                     colnames(idx)))
   steps <- idx[idx$section == "curation_step", ]
-  expect_equal(nrow(steps), 67L)
-  expect_identical(steps$number, 1:67)
+  expect_equal(nrow(steps), 72L)
+  expect_identical(steps$number, 1:72)
   expect_true(all(steps$available))
   expect_true(all(grepl("^pipeline/", steps$package_path)))
   expect_true(all(is.na(steps$records)))
@@ -113,7 +114,7 @@ test_that("the shipped step CSVs match the entry point they describe", {
   f <- system.file("reproducibility", "curation_steps.csv", package = "CanPAS")
   expect_true(nzchar(f))
   s <- utils::read.csv(f, stringsAsFactors = FALSE)
-  expect_equal(nrow(s), 67L)
+  expect_equal(nrow(s), 72L)
   expect_true(all(c("number", "id", "script", "what_it_does",
                     "consolidated_file", "kind") %in% colnames(s)))
   # each consolidated file really ships and really contains the runner

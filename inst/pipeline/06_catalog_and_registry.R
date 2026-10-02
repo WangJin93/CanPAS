@@ -602,7 +602,8 @@ for (i in seq_len(nrow(di))) {
     part <- ov[ov$A == a | ov$B == a, , drop = FALSE]
     part$other <- ifelse(part$A == a, part$B, part$A)
     kind <- if (all(part$source == "platform-pair"))
-      "SAME SERIES on another platform — do not pool together (one study, platform split; patient ids match, titles differ only by platform/label suffix)"
+      # ASCII hyphen only: the catalog `Note` column is ASCII-only (2026-09-30 Note translation).
+      "SAME SERIES on another platform - do not pool together (one study, platform split; patient ids match, titles differ only by platform/label suffix)"
     else "OVERLAPS"
     cnt <- ifelse(is.na(part$n), "count not recorded", as.character(part$n))
     note_col[i] <- sprintf("%s %s (shared patients: %s)", kind, group_of[[a]],
@@ -628,13 +629,16 @@ if (nrow(ov_ex)) {
 has_surv_note <- !is.na(di$n_surv)
 no_endpoint <- is.na(di$SurvivalTypes)
 note_col[is.na(note_col) & no_endpoint & has_surv_note] <- "no annotated endpoint"
-note_col[is.na(note_col) & !has_surv_note] <- "expression only — no survival table, cannot be analysed"
+note_col[is.na(note_col) & !has_surv_note] <- "expression only - no survival table, cannot be analysed"
 
 # 保留 catalog 中已有的「数据来源」说明：本脚本只重写自己负责的 Note 片段。
 # 做法是按 " | " 拆段、丢掉本脚本自己写过的段（重叠/碰撞/无终点/无生存表），
 # 其余原样拼回。这样重复运行是幂等的（不会把碰撞说明叠加两次），
 # 也不会把别的脚本写的数据来源说明清掉。
-auto_pat <- "^(OVERLAPS |SAME SERIES on another platform|TITLE COLLISION|no annotated endpoint|expression only — no survival table)"
+# Accept both the legacy em dash and the ASCII hyphen written since the 2026-09-30
+# Note translation (`.` matches either), so re-running stays idempotent over an
+# already-ASCII catalog.
+auto_pat <- "^(OVERLAPS |SAME SERIES on another platform|TITLE COLLISION|no annotated endpoint|expression only . no survival table)"
 old_note <- if ("Note" %in% names(di)) as.character(di$Note) else rep(NA_character_, nrow(di))
 prov <- vapply(old_note, function(x) {
   if (is.na(x) || !nzchar(x)) return(NA_character_)
@@ -1847,4 +1851,513 @@ if (apply_l) {
   write.csv(exc, exc_p, row.names = FALSE, na = "NA")
   cat("[applied] catalog row appended, excluded.csv row updated\n")
 } else cat("[dry-run] nothing written\n")
+}
+
+# ---------------------------------------------------------------------------
+# run_114_build_endpoint_semantics()  <-  verbatim pipeline/R/114_build_endpoint_semantics.R
+# ---------------------------------------------------------------------------
+run_114_build_endpoint_semantics <- function() {
+# 114_build_endpoint_semantics.R ---------------------------------------------
+# A1: build the endpoint-semantics companion table.
+#
+# Deliverable
+#   data/endpoint_semantics.csv          manuscript/package-facing copy (written with --publish)
+#   pipeline/out/endpoint_semantics.csv  derived copy (always written)
+#
+# Shape
+#   One row per **cohort x endpoint family**: 197 catalog cohorts x 5 pooling families
+#   (OS, DSS, DFS, PFS, MFS) = 985 rows, in catalog order, family order OS/DSS/DFS/PFS/MFS.
+#   Columns (frozen by the hardening spec):
+#     Accession, Type, Family, Token, TokenRole, SourceField, EventDefinition, TimeOrigin,
+#     CensoringRule, CompetingEvents, Derived, PoolingClass, Evidence, Note
+#
+# How every field is sourced (nothing is invented; unknown values are written out)
+#   Token           <- catalog column EP_<Family> (data/dataset_info.csv); `not stated`
+#                      when that cell is NA (the cohort carries no endpoint in the family).
+#   TokenRole       <- `primary` when Token == catalog EndpointPrimary, else `contributing`;
+#                      `not stated` on an empty family cell.
+#   Derived         <- `yes` for the TCGA-derived tokens DFI/PFI (DERIVED, see
+#                      pipeline/R/11_endpoint_families.R), else `no`; `not stated` when empty.
+#   PoolingClass    <- Exact-equivalent   if Token is the family's canonical token
+#                                          (OS in OS, DSS in DSS, DFS in DFS, PFS in PFS, MFS in MFS)
+#                      Clinically-related if the token is a different token pooled into the
+#                                          family by the documented rule (RFS/EFS/DFI in DFS,
+#                                          PFI in PFS, DRFS in MFS, CSS/BCSS in DSS)
+#                      Not-poolable        a token is present but the documented map does not
+#                                          carry it (currently 0 cells)
+#                      Unknown             a token is present but its pooling relation is not
+#                                          documented (currently 0 cells)
+#                      Absent              the cohort carries no endpoint in that family at all;
+#                                          not a pooling verdict (638 of the 985 cells).  The
+#                                          reviewer's four-value vocabulary therefore applies
+#                                          exactly to the 347 token-bearing cells.
+#   SourceField     <- the deposit field pair the endpoint was read from, when a held build
+#                      script records it (pipeline/R/03_surv_table.R `specs`); otherwise the
+#                      delivered survival-table column pair `<TOKEN>_status + <TOKEN>_time`.
+#   EventDefinition <- the parenthetical definition recorded in the source status field name
+#                      (e.g. `overall_event (death from any cause)`), verbatim; else Unknown.
+#   TimeOrigin      <- the date fields recorded for a `kind = "date"` endpoint, verbatim
+#                      (e.g. `start = surgery.date`); else Unknown.
+#   CensoringRule   <- the inverted-censoring flag recorded in the spec
+#                      (`invert = TRUE`, 1 = censored); else Unknown.
+#   CompetingEvents <- Unknown (no held artefact states a competing-events rule for any token).
+#   Evidence        <- the artefact(s) the row was read from, `;`-separated.
+#   Note            <- free text: unit conversions, TCGA derivation, empty-cell explanation.
+#
+# Usage
+#   Rscript pipeline/R/114_build_endpoint_semantics.R [--publish]
+#   --publish  also writes the manuscript/package-facing copy data/endpoint_semantics.csv
+# ----------------------------------------------------------------------------
+root <- path.expand(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"))
+source(file.path(root, "pipeline/R/00_output_root.R"))
+publish <- "--publish" %in% commandArgs(trailingOnly = TRUE)
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || all(is.na(a))) b else a
+
+FAMS <- c("OS", "DSS", "DFS", "PFS", "MFS")
+FAM_CANON <- c(OS = "OS", DSS = "DSS", DFS = "DFS", PFS = "PFS", MFS = "MFS")
+TOKEN_FAMILY <- c(OS = "OS", DSS = "DSS", CSS = "DSS", BCSS = "DSS",
+                  DFS = "DFS", RFS = "DFS", EFS = "DFS", DFI = "DFS",
+                  PFS = "PFS", PFI = "PFS", MFS = "MFS", DRFS = "MFS")
+DERIVED <- c("DFI", "PFI")
+
+di <- read.csv(cpas_data("dataset_info.csv"), stringsAsFactors = FALSE)
+stopifnot(nrow(di) == 197L, all(paste0("EP_", FAMS) %in% colnames(di)))
+
+# ---- delivered survival artefacts (column inventory per cohort) -------------
+surv_dir <- cpas_data("processed", "surv")
+surv_files <- sub("_surv\\.rds$", "", list.files(surv_dir, pattern = "_surv\\.rds$"))
+find_surv <- function(acc) {
+  v <- unique(c(acc, gsub("_", "-", acc, fixed = TRUE), gsub("-", "_", acc, fixed = TRUE)))
+  h <- v[v %in% surv_files]
+  if (length(h)) h[1] else NA_character_
+}
+surv_cols <- new.env(parent = emptyenv())
+surv_path_of <- function(acc) {
+  f <- find_surv(acc)
+  if (is.na(f)) return(NA_character_)
+  file.path("data/processed/surv", paste0(f, "_surv.rds"))
+}
+get_cols <- function(acc) {
+  f <- find_surv(acc)
+  if (is.na(f)) return(character(0))
+  if (is.null(surv_cols[[f]])) {
+    s <- tryCatch(readRDS(file.path(surv_dir, paste0(f, "_surv.rds"))), error = function(e) NULL)
+    assign(f, if (is.null(s)) character(0) else colnames(s), envir = surv_cols)
+  }
+  surv_cols[[f]]
+}
+
+# ---- upstream source-field registry recorded in 03_surv_table.R -------------
+# The `specs` list is a plain literal; evaluate only that one top-level expression.
+parse_specs <- function(path) {
+  # parent = the script environment so the spec literals can reference the same helpers the
+  # build script itself uses (after the A10 change the literals call cpas_out()).
+  e <- new.env(parent = environment())
+  assign("ROOT", root, envir = e)
+  assign("%||%", function(a, b) if (is.null(a) || length(a) == 0 || all(is.na(a))) b else a,
+         envir = e)
+  ex <- parse(path, keep.source = FALSE)
+  for (i in seq_along(ex)) {
+    x <- ex[[i]]
+    if (is.call(x) && length(x) == 3 && identical(as.character(x[[1]]), "<-") &&
+        identical(as.character(x[[2]]), "specs")) {
+      eval(x, envir = e)
+      if (exists("specs", envir = e, inherits = FALSE)) return(get("specs", envir = e))
+    }
+  }
+  list()
+}
+specs <- parse_specs(file.path(root, "pipeline/R/03_surv_table.R"))
+names(specs) <- gsub("-", "_", names(specs), fixed = TRUE)
+
+spec_for <- function(acc, token) {
+  sp <- specs[[acc]]
+  if (is.null(sp) || is.null(sp$surv)) return(NULL)
+  sp$surv[[token]]
+}
+
+# ---- build the 985-row grid -------------------------------------------------
+rows <- vector("list", nrow(di) * length(FAMS))
+k <- 0L
+for (i in seq_len(nrow(di))) {
+  acc <- as.character(di$Accession[i])
+  cols <- get_cols(acc)
+  spath <- surv_path_of(acc)
+  is_tcga <- startsWith(acc, "TCGA-")
+  for (fam in FAMS) {
+    k <- k + 1L
+    tok <- as.character(di[[paste0("EP_", fam)]][i])
+    present <- !is.na(tok) && nzchar(tok)
+    sp <- if (present) spec_for(acc, tok) else NULL
+    has_cols <- present && all(c(paste0(tok, "_status"), paste0(tok, "_time")) %in% cols)
+
+    ev_def <- tm_or <- cens <- "Unknown"
+    source_field <- evidence <- note <- NA_character_
+
+    if (!present) {
+      pooling <- "Absent"
+      tokenrole <- derived <- "not stated"
+      evidence <- "data/dataset_info.csv"
+      note <- sprintf("no %s endpoint annotated for this cohort (EP_%s is NA in the catalog)",
+                      fam, fam)
+    } else {
+      tokenrole <- if (!is.na(di$EndpointPrimary[i]) && identical(tok, as.character(di$EndpointPrimary[i])))
+        "primary" else "contributing"
+      derived <- if (tok %in% DERIVED) "yes" else "no"
+      pooling <- if (!tok %in% names(TOKEN_FAMILY)) "Unknown"
+                 else if (identical(TOKEN_FAMILY[[tok]], fam))
+                   (if (identical(FAM_CANON[[fam]], tok)) "Exact-equivalent" else "Clinically-related")
+                 else "Unknown"
+      if (has_cols) {
+        ev <- c("data/dataset_info.csv",
+                sprintf("%s (columns %s_status, %s_time)", spath, tok, tok))
+      } else {
+        ev <- c("data/dataset_info.csv", spath)
+      }
+      # upstream source fields, when a held build script records them
+      if (!is.null(sp)) {
+        if (identical(sp$kind, "date")) {
+          endf <- sp$end %||% sp$end_event %||% sp$end_censor
+          source_field <- sprintf("status field `%s`; dates `%s` -> `%s`",
+                                  sp$status %||% "not stated", sp$start %||% "not stated",
+                                  endf %||% "not stated")
+          tm_or <- sprintf("start = %s; end = %s", sp$start %||% "not stated",
+                           endf %||% "not stated")
+        } else {
+          source_field <- sprintf("%s + %s", sp$status %||% "not stated",
+                                  sp$time %||% "not stated")
+        }
+        if (!is.null(sp$status) && grepl("\\(", sp$status))
+          ev_def <- sub("^[^()]*\\(([^)]*)\\).*$", "\\1", sp$status)
+        if (isTRUE(sp$invert))
+          cens <- sprintf("source field `%s` is inverted: 1 = censored, 0 = event",
+                          sp$status %||% "not stated")
+        ev <- c(ev, "pipeline/R/03_surv_table.R")
+      }
+      if (is.na(source_field))
+        source_field <- if (has_cols) sprintf("%s_status + %s_time", tok, tok)
+                        else "not stated"
+      if (is_tcga) {
+        ev <- c(ev, "data/tcga/tcga_surv.rda (via pipeline/R/35_add_tcga_cohorts.R)")
+      }
+      note_bits <- character(0)
+      if (is_tcga) note_bits <- c(note_bits, "TCGA endpoint table built from data/tcga/tcga_surv.rda; times converted days -> years (/365.25)")
+      if (!is.null(sp) && !is.null(sp$unit))
+        note_bits <- c(note_bits, sprintf("source time unit: %s (converted to years)", sp$unit))
+      if (!has_cols && !is.na(spath))
+        note_bits <- c(note_bits, sprintf("token columns %s_status/%s_time not found in the delivered survival table",
+                                          tok, tok))
+      note <- if (length(note_bits)) paste(note_bits, collapse = "; ") else ""
+      evidence <- paste(unique(ev[!is.na(ev)]), collapse = "; ")
+    }
+    rows[[k]] <- data.frame(
+      Accession = acc, Type = as.character(di$Type[i]), Family = fam,
+      Token = if (present) tok else "not stated",
+      TokenRole = tokenrole, SourceField = source_field,
+      EventDefinition = ev_def, TimeOrigin = tm_or, CensoringRule = cens,
+      CompetingEvents = "Unknown", Derived = derived, PoolingClass = pooling,
+      Evidence = evidence, Note = note, stringsAsFactors = FALSE)
+  }
+}
+out <- do.call(rbind, rows)
+out[] <- lapply(out, function(x) { x <- as.character(x); x[is.na(x)] <- ""; x })
+out$SourceField[out$SourceField == ""] <- "not stated"
+out$Evidence[out$Evidence == ""] <- "not stated"
+
+stopifnot(nrow(out) == nrow(di) * length(FAMS))
+stopifnot(!any(is.na(out$PoolingClass) | !nzchar(out$PoolingClass)))
+stopifnot(all(out$PoolingClass %in% c("Exact-equivalent", "Clinically-related", "Not-poolable", "Unknown", "Absent")))
+
+dir.create(cpas_out_root(), showWarnings = FALSE, recursive = TRUE)
+write.csv(out, cpas_out("endpoint_semantics.csv"), row.names = FALSE)
+if (publish) {
+  dir.create(dirname(cpas_data("endpoint_semantics.csv")), showWarnings = FALSE, recursive = TRUE)
+  write.csv(out, cpas_data("endpoint_semantics.csv"), row.names = FALSE)
+  cat("published: data/endpoint_semantics.csv\n")
+}
+cat(sprintf("endpoint_semantics: %d rows (%d cohorts x %d families)\n",
+            nrow(out), nrow(di), length(FAMS)))
+cat(sprintf("token-bearing cells: %d | empty cells: %d\n",
+            sum(out$Token != "not stated"), sum(out$Token == "not stated")))
+cat("\nPoolingClass (all 985 rows):\n"); print(table(out$PoolingClass))
+tok <- out[out$Token != "not stated", ]
+cat(sprintf("\nPoolingClass (the %d token-bearing cells; four-value vocabulary):\n", nrow(tok)))
+print(table(tok$PoolingClass))
+cat(sprintf("token-bearing cells outside Exact-equivalent/Clinically-related: %d\n",
+            sum(!tok$PoolingClass %in% c("Exact-equivalent", "Clinically-related"))))
+cat("\nTokenRole:\n"); print(table(out$TokenRole))
+cat("\nDerived:\n"); print(table(out$Derived))
+cat("\nnon-Unknown semantic cells: EventDefinition=", sum(out$EventDefinition != "Unknown"),
+    " TimeOrigin=", sum(out$TimeOrigin != "Unknown"),
+    " CensoringRule=", sum(out$CensoringRule != "Unknown"),
+    " CompetingEvents=", sum(out$CompetingEvents != "Unknown"), "\n", sep = "")
+cat("\nEvidence artefacts (distinct):\n"); print(sort(table(out$Evidence), decreasing = TRUE))
+}
+
+# ---------------------------------------------------------------------------
+# run_116_build_cohort_overlap_suppl()  <-  verbatim pipeline/R/116_build_cohort_overlap_suppl.R
+# ---------------------------------------------------------------------------
+run_116_build_cohort_overlap_suppl <- function() {
+# 116_build_cohort_overlap_suppl.R -------------------------------------------
+# A6: emit the shared-patient overlap register as a shipped companion table.
+#
+# Input  (read-only, existing register; NOT recomputed here)
+#   pipeline/out/cohort_overlap.csv   A, B, n, source   (30 pairs, written by
+#                                     pipeline/R/26_cohort_overlap.R from local pheno titles
+#                                     + the verified GEO-side seed)
+#   pipeline/ref/cohort_overlap_seed.csv
+#   data/pheno/*.rds                  title columns (for the title-based pairs)
+#
+# Output
+#   data/suppl/cohort_overlap.csv            manuscript/package-facing copy (--publish)
+#   pipeline/out/cohort_overlap_suppl.csv    derived copy (always written)
+#   Columns (frozen): AccessionA, AccessionB, SharedPatients, Basis, Evidence
+#
+# Basis is the register's own provenance label, verbatim: title | platform-pair | GEO-seed.
+# Evidence names the artefact that pair was verified against.
+#
+# Usage
+#   Rscript pipeline/R/116_build_cohort_overlap_suppl.R [--publish]
+# ----------------------------------------------------------------------------
+root <- path.expand(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"))
+source(file.path(root, "pipeline/R/00_output_root.R"))
+publish <- "--publish" %in% commandArgs(trailingOnly = TRUE)
+
+ov <- read.csv(cpas_out("cohort_overlap.csv"), stringsAsFactors = FALSE)
+stopifnot(all(c("A", "B", "n", "source") %in% colnames(ov)))
+
+canon <- function(x) gsub("[_-]", "", as.character(x))
+pheno_files <- list.files(cpas_data("pheno"), pattern = "\\.rds$")
+pheno_of <- function(acc) {
+  k <- canon(acc)
+  hit <- pheno_files[canon(sub("\\.rds$", "", pheno_files)) == k]
+  if (length(hit)) file.path("data/pheno", hit[1]) else NA_character_
+}
+
+base_of <- function(acc) sub("_GPL[0-9A-Za-z]+$", "", acc)
+seed <- read.csv(file.path(root, "pipeline/ref/cohort_overlap_seed.csv"),
+                 stringsAsFactors = FALSE)
+
+evidence_of <- function(a, b, src) {
+  if (identical(src, "title")) {
+    pa <- pheno_of(a); pb <- pheno_of(b)
+    files <- paste(stats::na.omit(c(pa, pb)), collapse = " + ")
+    if (!nzchar(files)) files <- "local pheno title columns"
+    return(sprintf("identical sample titles (`title` column) in %s (pipeline/R/26_cohort_overlap.R title rule)",
+                   files))
+  }
+  if (identical(src, "platform-pair")) {
+    bb <- if (identical(base_of(a), base_of(b))) base_of(a)
+          else paste(unique(c(base_of(a), base_of(b))), collapse = "/")
+    return(sprintf("same GEO series %s on two platforms: one study split by platform, patient ids match, titles differ only by platform/label suffix (pipeline/R/26_cohort_overlap.R `base_of` rule)",
+                   bb))
+  }
+  if (identical(src, "GEO-seed")) {
+    k <- canon(a) %in% canon(seed$A) & canon(b) %in% canon(seed$B) |
+         canon(a) %in% canon(seed$B) & canon(b) %in% canon(seed$A)
+    nt <- if (any(k)) trimws(seed$note[which(k)[1]]) else ""
+    return(sprintf("pipeline/ref/cohort_overlap_seed.csv (verified GEO-side pair)%s",
+                   if (nzchar(nt)) paste0(": ", nt) else ""))
+  }
+  "not stated"
+}
+
+out <- data.frame(
+  AccessionA = ov$A,
+  AccessionB = ov$B,
+  SharedPatients = ov$n,
+  Basis = ov$source,
+  Evidence = vapply(seq_len(nrow(ov)),
+                    function(i) evidence_of(ov$A[i], ov$B[i], ov$source[i]), character(1)),
+  stringsAsFactors = FALSE)
+
+write.csv(out, cpas_out("cohort_overlap_suppl.csv"), row.names = FALSE)
+if (publish) {
+  dir.create(dirname(cpas_suppl("cohort_overlap.csv")), showWarnings = FALSE, recursive = TRUE)
+  write.csv(out, cpas_suppl("cohort_overlap.csv"), row.names = FALSE)
+  cat("published: data/suppl/cohort_overlap.csv\n")
+}
+
+# group count over catalogued accessions (the register's own grouping rule)
+di <- read.csv(cpas_data("dataset_info.csv"), stringsAsFactors = FALSE)
+cat(sprintf("cohort_overlap: %d pairs | %d distinct catalog CohortGroup values | %d cohorts flagged\n",
+            nrow(out), length(unique(stats::na.omit(di$CohortGroup))),
+            sum(!is.na(di$CohortGroup))))
+cat("Basis:\n"); print(table(out$Basis))
+cat("SharedPatients: min", min(out$SharedPatients), "max", max(out$SharedPatients),
+    "median", stats::median(out$SharedPatients), "\n")
+}
+
+# ---------------------------------------------------------------------------
+# run_118_update_catalog_hardening_cols()  <-  verbatim pipeline/R/118_update_catalog_hardening_cols.R
+# ---------------------------------------------------------------------------
+run_118_update_catalog_hardening_cols <- function() {
+# 118_update_catalog_hardening_cols.R ----------------------------------------
+# A1 (catalog part) + the parent's `n_convention` convention column.
+#
+# Appends SIX columns to data/dataset_info.csv (append-only: every existing column keeps its
+# name, order and values except the two documented stale family cells below) and rebuilds
+# CanPAS/data/dataset_info.rda cell-for-cell from the resulting CSV.
+#
+#   n_join_dropped    |{delivered survival rows with a usable primary endpoint}| minus
+#                     |{those also present in the delivered expression table}|
+#                     NA for the 33 TCGA rows (expression is fetched on demand from UCSC Xena;
+#                     there is no local expression table to join)
+#   join_drop_reason  free text naming the dropped sample ids, or why the count is not
+#                     applicable (TCGA), or the clinical-record convention
+#   admission_gate    ">50" | ">=30"  (see rule below)
+#   gate_decision     "gate" | "author-decision"
+#   overlap_group     the catalog's own overlap-group label (same value as CohortGroup), NA if none
+#   n_convention      "join-restricted" (195 rows) | "clinical-record" (2 rows, see below)
+#
+# RULES (all mechanical, none invented)
+#   * n_convention = "clinical-record" for exactly GSE325123 and GSE31312.  Both were
+#     deliberately registered at the audited clinical-record level (their Notes state the
+#     clinical-record counts 105/62 and 475/172 *and* the expression-join-restricted
+#     counterparts 102/60 and 470/170).  Every other row records the join-restricted counts,
+#     so it is "join-restricted".  `pipeline/out/catalog_N_fix.csv` proposes changing those two
+#     rows to the join-restricted values; that proposal was reviewed in this round and REJECTED
+#     (it would destroy the registered semantics).  Do not re-apply it blindly.
+#   * Two genuinely stale family cells are corrected to the convention every other row uses
+#     (0 for a family the cohort does not carry): GSE40272_GPL15973 n_OS 40 -> 0 and
+#     GSE70768 n_OS 57 -> 0; both rows have EP_OS = NA (their OS annotation was removed by
+#     23_fix_surv_ids_and_endpoints.R / 25_fix_endpoint_annotations.R) and EndpointFamilies = DFS.
+#   * admission_gate: ">=30" when N < 51 else ">50".  The catalog README records that the gate
+#     was relaxed from > 50 to >= 30 patients per cohort for the small additions (and two Notes
+#     say "gate relaxed to >=30 per author"); a cohort with N < 51 therefore cannot have been
+#     admitted under the historical > 50 gate.  gate_decision = "author-decision" when N < 30
+#     (the README records exactly one such cohort, GSE205209, admitted by explicit author
+#     decision), else "gate".
+#
+# Usage
+#   Rscript pipeline/R/118_update_catalog_hardening_cols.R            # dry-run (writes nothing)
+#   Rscript pipeline/R/118_update_catalog_hardening_cols.R --write    # CSV + rda
+# ----------------------------------------------------------------------------
+root <- path.expand(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"))
+source(file.path(root, "pipeline/R/00_output_root.R"))
+write_back <- "--write" %in% commandArgs(trailingOnly = TRUE)
+
+FAMS <- c("OS", "DSS", "DFS", "PFS", "MFS")
+CLINICAL_RECORD <- c("GSE325123", "GSE31312")
+CONVENTION_CLAUSE <- paste0(
+  " [n_convention=clinical-record: N and n_events are the audited clinical-record counts, ",
+  "not the expression-join counts; the Note above also states the join-restricted counterpart, ",
+  "and pipeline/R/16_verify_catalog_mirror.R treats this row as a documented convention ",
+  "exception rather than a rule violation.]")
+
+di <- read.csv(cpas_data("dataset_info.csv"), stringsAsFactors = FALSE, check.names = FALSE)
+orig_cols <- colnames(di)
+stopifnot(nrow(di) == 197L, !any(c("n_join_dropped", "join_drop_reason", "admission_gate",
+                                   "gate_decision", "overlap_group", "n_convention") %in% orig_cols))
+
+# ---- delivered artefacts ----------------------------------------------------
+surv_dir <- cpas_data("processed", "surv")
+expr_dir <- cpas_data("expr")
+surv_idx <- sub("_surv\\.rds$", "", list.files(surv_dir, pattern = "_surv\\.rds$"))
+expr_idx <- sub("\\.rds$", "", list.files(expr_dir, pattern = "\\.rds$"))
+pick_one <- function(a, idx) {
+  v <- unique(c(a, gsub("_", "-", a, fixed = TRUE), gsub("-", "_", a, fixed = TRUE)))
+  h <- v[v %in% idx]
+  if (length(h)) h[1] else NA_character_
+}
+col_ci <- function(cols, want) {
+  hit <- cols[tolower(cols) == tolower(want)]
+  if (length(hit)) hit[1] else NA_character_
+}
+
+n_drop <- rep(NA_integer_, nrow(di))
+drop_reason <- rep(NA_character_, nrow(di))
+for (i in seq_len(nrow(di))) {
+  a <- as.character(di$Accession[i])
+  sf <- pick_one(a, surv_idx)
+  if (is.na(sf)) { drop_reason[i] <- "no delivered survival table"; next }
+  s <- tryCatch(readRDS(file.path(surv_dir, paste0(sf, "_surv.rds"))), error = function(e) NULL)
+  if (is.null(s)) { drop_reason[i] <- "delivered survival table unreadable"; next }
+  prim <- as.character(di$EndpointPrimary[i])
+  sc <- col_ci(colnames(s), paste0(prim, "_status")); tc <- col_ci(colnames(s), paste0(prim, "_time"))
+  if (is.na(sc) || is.na(tc)) { drop_reason[i] <- sprintf("primary token %s has no status/time column pair", prim); next }
+  usable <- !is.na(s[[sc]]) & !is.na(s[[tc]])
+  ef <- pick_one(a, expr_idx)
+  if (is.na(ef)) {
+    n_drop[i] <- NA_integer_
+    drop_reason[i] <- "not applicable - TCGA expression is fetched on demand from UCSC Xena, so there is no delivered expression table to join against"
+    next
+  }
+  e <- tryCatch(readRDS(file.path(expr_dir, paste0(ef, ".rds"))), error = function(e) NULL)
+  if (is.null(e)) { drop_reason[i] <- "delivered expression table unreadable"; next }
+  exn <- setdiff(colnames(e), c("ID_REF", "row_names"))
+  ids <- rownames(s)
+  joined <- usable & ids %in% exn
+  n_drop[i] <- sum(usable) - sum(joined)
+  dst <- ids[usable & !ids %in% exn]
+  drop_reason[i] <- if (n_drop[i] == 0L)
+    "none - every delivered survival row with a usable primary endpoint is present in the delivered expression table"
+  else sprintf("%d survival row(s) with a usable primary endpoint absent from the expression table: %s",
+               length(dst), paste(utils::head(dst, 8), collapse = ", "))
+}
+
+admission_gate <- ifelse(!is.na(di$N) & di$N < 51, ">=30", ">50")
+gate_decision <- ifelse(!is.na(di$N) & di$N < 30, "author-decision", "gate")
+overlap_group <- if ("CohortGroup" %in% orig_cols) as.character(di$CohortGroup) else NA_character_
+n_convention <- ifelse(as.character(di$Accession) %in% CLINICAL_RECORD, "clinical-record", "join-restricted")
+
+# ---- the two stale family cells + the convention clause ---------------------
+before <- list()
+di$n_OS <- as.integer(di$n_OS)
+for (a in c("GSE40272_GPL15973", "GSE70768")) {
+  i <- which(as.character(di$Accession) == a)
+  stopifnot(length(i) == 1, is.na(di$EP_OS[i]), di$n_OS[i] != 0L)
+  before[[a]] <- di$n_OS[i]
+  di$n_OS[i] <- 0L
+}
+for (a in CLINICAL_RECORD) {
+  i <- which(as.character(di$Accession) == a)
+  stopifnot(length(i) == 1, identical(n_convention[i], "clinical-record"))
+  di$Note[i] <- paste0(as.character(di$Note[i]), CONVENTION_CLAUSE)
+}
+
+di$n_join_dropped <- as.integer(n_drop)
+di$join_drop_reason <- as.character(drop_reason)
+di$admission_gate <- as.character(admission_gate)
+di$gate_decision <- as.character(gate_decision)
+di$overlap_group <- as.character(overlap_group)
+di$n_convention <- as.character(n_convention)
+
+stopifnot(identical(colnames(di)[seq_along(orig_cols)], orig_cols))
+cat(sprintf("catalog: %d rows | columns %d -> %d (appended: %s)\n", nrow(di), length(orig_cols),
+            ncol(di), paste(setdiff(colnames(di), orig_cols), collapse = ", ")))
+cat("n_join_dropped:", sum(!is.na(di$n_join_dropped)), "populated (", sum(is.na(di$n_join_dropped)),
+    "NA, all TCGA ) | nonzero:", sum(di$n_join_dropped > 0, na.rm = TRUE), "\n", sep = "")
+cat("join_drop_reason populated:", sum(!is.na(di$join_drop_reason) & nzchar(di$join_drop_reason)), "\n")
+cat("rows with n_join_dropped > 0:\n")
+print(di[which(di$n_join_dropped > 0), c("Accession", "n_join_dropped", "join_drop_reason")], row.names = FALSE)
+cat("\nadmission_gate:\n"); print(table(di$admission_gate))
+cat("\ngate_decision:\n"); print(table(di$gate_decision))
+cat("author-decision rows:", paste(di$Accession[di$gate_decision == "author-decision"], collapse = ", "), "\n")
+cat("\noverlap_group populated:", sum(!is.na(di$overlap_group)), "| distinct groups:",
+    length(unique(stats::na.omit(di$overlap_group))), "\n")
+cat("\nn_convention:\n"); print(table(di$n_convention))
+cat("\nstale family cells corrected:", paste(names(before), before, "-> 0", sep = "=", collapse = ", "), "\n")
+
+if (!write_back) {
+  cat("\n[dry-run] nothing written. Re-run with --write to write data/dataset_info.csv and rebuild the rda.\n")
+  quit(save = "no")
+}
+write.csv(di, cpas_data("dataset_info.csv"), row.names = FALSE)
+dataset_info <- di
+save(dataset_info, file = file.path(root, "CanPAS/data/dataset_info.rda"), compress = "xz", version = 3)
+
+# ---- CSV <-> rda cell-identical ---------------------------------------------
+csv <- read.csv(cpas_data("dataset_info.csv"), stringsAsFactors = FALSE, check.names = FALSE)
+rda <- get(load(file.path(root, "CanPAS/data/dataset_info.rda")))
+stopifnot(identical(dim(csv), dim(rda)), identical(colnames(csv), colnames(rda)))
+diff_n <- 0L
+for (cn in colnames(csv)) {
+  x <- as.character(csv[[cn]]); y <- as.character(rda[[cn]])
+  x[is.na(x)] <- "<NA>"; y[is.na(y)] <- "<NA>"
+  diff_n <- diff_n + sum(x != y)
+}
+cat(sprintf("\nwrote data/dataset_info.csv (%d x %d) and rebuilt CanPAS/data/dataset_info.rda\n",
+            nrow(csv), ncol(csv)))
+cat(sprintf("CSV <-> rda cell differences: %d | SUM(N) = %s\n", diff_n, format(sum(csv$N, na.rm = TRUE), big.mark = ",")))
 }

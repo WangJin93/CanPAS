@@ -24,14 +24,14 @@
 
 # Documented runner inventory (see inst/pipeline/README.md)
 .pipeline_inventory <- c(
-  "01_ingest_parse.R"          = 6L,
+  "01_ingest_parse.R"          = 7L,
   "02_platform_maps.R"         = 5L,
   "03_survival_tables.R"       = 10L,
   "04_cohort_builds.R"         = 5L,
   "05_clinical_and_scale.R"    = 9L,
-  "06_catalog_and_registry.R"  = 11L,
+  "06_catalog_and_registry.R"  = 14L,
   "07_mirror_upload.R"         = 7L,
-  "08_qc_screen_and_verify.R"  = 5L,
+  "08_qc_screen_and_verify.R"  = 6L,
   "09_analysis_and_figures.R"  = 9L
 )
 
@@ -134,7 +134,7 @@ test_that("sourcing the nine consolidated files has no side effects", {
   for (f in .pipeline_files(dir)) sys.source(file.path(dir, f), envir = env)
   after <- .pipeline_snapshot(watched)
   runners <- ls(env, pattern = "^run_")
-  expect_equal(length(runners), 67L)
+  expect_equal(length(runners), 72L)
   expect_true(all(vapply(runners, function(n) is.function(get(n, envir = env)), logical(1))))
   expect_identical(after, before)
   expect_length(list.files(sandbox, recursive = TRUE, all.files = TRUE, no.. = TRUE), 0L)

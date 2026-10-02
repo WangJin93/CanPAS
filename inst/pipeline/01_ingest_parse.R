@@ -1527,3 +1527,52 @@ res <- do.call(rbind, summ)
 write.csv(res, file.path(OUT, "geo_expansion_bespoke_log.csv"), row.names = FALSE)
 cat("\n=== 93 bespoke build summary ===\n"); print(res, row.names = FALSE)
 }
+
+# ---------------------------------------------------------------------------
+# run_00_output_root()  <-  verbatim pipeline/R/00_output_root.R
+# ---------------------------------------------------------------------------
+run_00_output_root <- function() {
+# 00_output_root.R -----------------------------------------------------------
+# A10: explicit output locations for the curation pipeline.
+#
+# Why
+#   Scripts used to depend on the implicit current working directory (several did
+#   `setwd(root)` and then wrote `"pipeline/out/x.csv"`, and one defaulted its root to
+#   `~/data/Project/CanPAS`).  The same script could therefore drop its derived CSVs in
+#   two different places depending on how it was launched.  This file makes the output
+#   root explicit and overridable:
+#
+#     CPAS_DATA_ROOT  (default: the repository, /home/Jingle/data/Project/CPAS)
+#     CPAS_OUT_ROOT   (default: <CPAS_DATA_ROOT>/pipeline/out)
+#
+#   `cpas_out(...)` builds a derived-output path under the explicit output root.
+#   `cpas_data(...)` builds a path under `data/` for the *manuscript/package-facing*
+#   copies; those copies are written only by an explicit, documented publish step
+#   (see pipeline/OUTPUT_LAYOUT.md), never as a side effect of a generic run.
+#
+# This file defines functions only: sourcing it reads nothing and writes nothing.
+# ----------------------------------------------------------------------------
+
+#' Repository root (explicit, env-overridable)
+cpas_root <- function() {
+  r <- Sys.getenv("CPAS_DATA_ROOT", unset = "")
+  if (!nzchar(r)) r <- "/home/Jingle/data/Project/CPAS"
+  path.expand(r)
+}
+
+#' Derived-output root (explicit, env-overridable, default <ROOT>/pipeline/out)
+cpas_out_root <- function() {
+  o <- Sys.getenv("CPAS_OUT_ROOT", unset = "")
+  if (nzchar(o)) return(path.expand(o))
+  file.path(cpas_root(), "pipeline", "out")
+}
+
+#' Path under the derived-output root
+cpas_out <- function(...) file.path(cpas_out_root(), ...)
+
+#' Path under <ROOT>/data (manuscript/package-facing copies)
+cpas_data <- function(...) file.path(cpas_root(), "data", ...)
+
+#' Path under <ROOT>/data/suppl
+cpas_suppl <- function(...) file.path(cpas_root(), "data", "suppl", ...)
+}

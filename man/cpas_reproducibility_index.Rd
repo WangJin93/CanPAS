@@ -17,7 +17,7 @@ cpas_reproducibility_index(package = "CanPAS", root = NULL)
 A data frame, one row per indexed item, with columns:
   \item{\code{section}}{\code{"curation_step"}, \code{"register"},
     \code{"repair_record"}, \code{"frozen_state"} or \code{"additional_file"}}
-  \item{\code{number}}{1..67 for the curation steps, \code{NA} otherwise}
+  \item{\code{number}}{1..72 for the curation steps, \code{NA} otherwise}
   \item{\code{item}}{step id, or the item name for the other sections}
   \item{\code{script}}{the original script of a step (\code{NA} otherwise)}
   \item{\code{what_it_does}}{what the step or item is}
@@ -35,7 +35,7 @@ A data frame, one row per indexed item, with columns:
     project root when it exists there, else \code{NA}}
 }
 \description{
-A tidy data frame indexing the material behind the reported numbers: the 67
+A tidy data frame indexing the material behind the reported numbers: the 72
 curation steps of the shipped pipeline (with the consolidated
 \code{inst/pipeline/} file that provides each one), the exclusion register
 (109 records), the repair and defect records, the frozen-state record, and the

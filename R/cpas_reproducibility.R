@@ -4,16 +4,16 @@
 # The package ships the curation pipeline as scripts, and the project keeps the
 # registers, the defect reports and the additional-file set outside the package.
 # This file is the one place that says, offline and from an installed package,
-# what that material is and where each piece lives: the 67 curation steps and
+# what that material is and where each piece lives: the 72 curation steps and
 # the consolidated inst/pipeline/ file that provides each one, the exclusion
 # register (109 records), the repair / defect records, the frozen-state record,
 # and the additional-file layout.
 #
 # It is an index, not a data dump: the only table it reads is a small shipped CSV
-# (a 67-row step inventory and a 14-row material list).  It never reads the
+# (a 72-row step inventory and a 14-row material list).  It never reads the
 # catalog, the mirror or any cohort table, and it never downloads anything.
 
-#' @title The 67 curation steps of the shipped pipeline
+#' @title The 72 curation steps of the shipped pipeline
 #' @description
 #' Returns the step inventory of the curation pipeline that built the CanPAS
 #' mirror and catalog: one row per step with its canonical run order, its
@@ -29,12 +29,12 @@
 #' point is visible rather than silent.
 #' @param package Package to resolve the shipped files in (default
 #'   \code{"CanPAS"}); mainly useful for tests.
-#' @return A data frame with one row per step (67 rows):
-#'   \item{\code{number}}{canonical run order, 1..67}
+#' @return A data frame with one row per step (72 rows):
+#'   \item{\code{number}}{canonical run order, 1..72}
 #'   \item{\code{id}}{the step id used by \code{run_pipeline.R} (e.g. \code{"07b"})}
 #'   \item{\code{script}}{the original script name (e.g. \code{"07b_split_tnm.R"})}
 #'   \item{\code{what_it_does}}{one-line description of the step}
-#'   \item{\code{kind}}{\code{"numbered construction / repair step"} (58 rows) or
+#'   \item{\code{kind}}{\code{"numbered construction / repair step"} (63 rows) or
 #'     \code{"helper / demo / validation script"} (9 rows)}
 #'   \item{\code{consolidated_file}}{the \code{inst/pipeline/} file that provides
 #'     the step}
@@ -48,7 +48,7 @@
 #' @export
 #' @examples
 #' steps <- cpas_pipeline_steps()
-#' nrow(steps)                                  # 67
+#' nrow(steps)                                  # 72
 #' table(steps$kind)
 #' head(steps[, c("number", "script", "consolidated_file")])
 cpas_pipeline_steps <- function(package = "CanPAS") {
@@ -98,7 +98,7 @@ cpas_pipeline_steps <- function(package = "CanPAS") {
 
 #' @title Index of the reproducibility material
 #' @description
-#' A tidy data frame indexing the material behind the reported numbers: the 67
+#' A tidy data frame indexing the material behind the reported numbers: the 72
 #' curation steps of the shipped pipeline (with the consolidated
 #' \code{inst/pipeline/} file that provides each one), the exclusion register
 #' (109 records), the repair and defect records, the frozen-state record, and the
@@ -124,7 +124,7 @@ cpas_pipeline_steps <- function(package = "CanPAS") {
 #' @return A data frame, one row per indexed item, with columns:
 #'   \item{\code{section}}{\code{"curation_step"}, \code{"register"},
 #'     \code{"repair_record"}, \code{"frozen_state"} or \code{"additional_file"}}
-#'   \item{\code{number}}{1..67 for the curation steps, \code{NA} otherwise}
+#'   \item{\code{number}}{1..72 for the curation steps, \code{NA} otherwise}
 #'   \item{\code{item}}{step id, or the item name for the other sections}
 #'   \item{\code{script}}{the original script of a step (\code{NA} otherwise)}
 #'   \item{\code{what_it_does}}{what the step or item is}

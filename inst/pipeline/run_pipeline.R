@@ -57,7 +57,8 @@ if (!dir.exists(pipeline_dir))
        call. = FALSE)
 
 steps <- data.frame(
-  id = c("01",
+  id = c(
+    "00","01",
     "02",
     "03",
     "04",
@@ -123,8 +124,14 @@ steps <- data.frame(
     "demo_unified_reader",
     "test_cpas_GSE44001",
     "test_cpas_dataset",
-    "validate_cpas"),
-  script = c("01_parse_gse.R",
+    "validate_cpas",
+    "114",
+    "116",
+    "117",
+    "118"
+  ),
+  script = c(
+    "00_output_root.R","01_parse_gse.R",
     "02_gpl_map.R",
     "03_surv_table.R",
     "04_qc_report.R",
@@ -190,8 +197,14 @@ steps <- data.frame(
     "demo_unified_reader.R",
     "test_cpas_GSE44001.R",
     "test_cpas_dataset.R",
-    "validate_cpas.R"),
-  group = c("01_ingest_parse.R",
+    "validate_cpas.R",
+    "114_build_endpoint_semantics.R",
+    "116_build_cohort_overlap_suppl.R",
+    "117_build_platform_coverage.R",
+    "118_update_catalog_hardening_cols.R"
+  ),
+  group = c(
+    "01_ingest_parse.R","01_ingest_parse.R",
     "02_platform_maps.R",
     "03_survival_tables.R",
     "08_qc_screen_and_verify.R",
@@ -257,8 +270,14 @@ steps <- data.frame(
     "09_analysis_and_figures.R",
     "09_analysis_and_figures.R",
     "09_analysis_and_figures.R",
-    "09_analysis_and_figures.R"),
-  runner = c("run_01_parse_gse",
+    "09_analysis_and_figures.R",
+    "06_catalog_and_registry.R",
+    "06_catalog_and_registry.R",
+    "08_qc_screen_and_verify.R",
+    "06_catalog_and_registry.R"
+  ),
+  runner = c(
+    "run_00_output_root","run_01_parse_gse",
     "run_02_gpl_map",
     "run_03_surv_table",
     "run_04_qc_report",
@@ -324,8 +343,14 @@ steps <- data.frame(
     "run_demo_unified_reader",
     "run_test_cpas_GSE44001",
     "run_test_cpas_dataset",
-    "run_validate_cpas"),
-  what = c("GEO series matrix -> data/raw + data/expr + data/pheno + dataset_info",
+    "run_validate_cpas",
+    "run_114_build_endpoint_semantics",
+    "run_116_build_cohort_overlap_suppl",
+    "run_117_build_platform_coverage",
+    "run_118_update_catalog_hardening_cols"
+  ),
+  what = c(
+    "Explicit, env-overridable output root (CPAS_DATA_ROOT / CPAS_OUT_ROOT); path helpers only","GEO series matrix -> data/raw + data/expr + data/pheno + dataset_info",
     "platform SOFT -> data/processed/gpl/<GPL>.rds probe->ENTREZ map",
     "pheno + specs -> data/processed/surv/<ACC>_surv.rds (endpoints + clinical)",
     "QC table over processed cohorts -> pipeline/out/QC_<date>.csv",
@@ -391,8 +416,14 @@ steps <- data.frame(
     "demo: materialise the unified reader over 15 TCGA projects",
     "end-to-end test for GSE44001 (cervical, DFS)",
     "end-to-end test for one uploaded dataset (expr -> surv -> COX)",
-    "batch validation of every registered cohort (expr -> surv -> univariable COX)"),
-  needs_db = c(FALSE,
+    "batch validation of every registered cohort (expr -> surv -> univariable COX)",
+    "Endpoint-semantics companion table: one row per cohort x family, with the pooling class",
+    "Shared-patient overlap register as the shipped companion table (30 pairs, basis and evidence)",
+    "Read-only platform annotation coverage and policy per platform table",
+    "Admission and convention columns appended to the catalog; dataset_info.rda rebuilt"
+  ),
+  needs_db = c(
+    FALSE,FALSE,
     FALSE,
     FALSE,
     FALSE,
@@ -458,8 +489,14 @@ steps <- data.frame(
     FALSE,
     FALSE,
     FALSE,
-    TRUE),
-  needs_net = c(TRUE,
+    TRUE,
+    FALSE,
+    FALSE,
+    TRUE,
+    FALSE
+  ),
+  needs_net = c(
+    FALSE,TRUE,
     FALSE,
     FALSE,
     FALSE,
@@ -525,8 +562,14 @@ steps <- data.frame(
     FALSE,
     TRUE,
     TRUE,
-    TRUE),
-  writes_data = c(TRUE,
+    TRUE,
+    FALSE,
+    FALSE,
+    FALSE,
+    FALSE
+  ),
+  writes_data = c(
+    FALSE,TRUE,
     TRUE,
     TRUE,
     TRUE,
@@ -590,9 +633,14 @@ steps <- data.frame(
     TRUE,
     FALSE,
     FALSE,
+    TRUE,
+    TRUE,
+    TRUE,
+    TRUE,
     TRUE,
     TRUE,
-    TRUE),
+    TRUE
+  ),
   stringsAsFactors = FALSE)
 
 args <- commandArgs(trailingOnly = TRUE)

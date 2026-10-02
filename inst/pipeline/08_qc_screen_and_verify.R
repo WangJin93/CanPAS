@@ -2452,3 +2452,203 @@ cat("\n=== mirror tables that are NOT referenced by the catalog ===\n")
 print(out[!out$in_catalog, c("table","mirror_rows","local_annotated_probes",
                              "delta_annotated_minus_mirror","verdict")], row.names = FALSE)
 }
+
+# ---------------------------------------------------------------------------
+# run_117_build_platform_coverage()  <-  verbatim pipeline/R/117_build_platform_coverage.R
+# ---------------------------------------------------------------------------
+run_117_build_platform_coverage <- function() {
+# 117_build_platform_coverage.R ----------------------------------------------
+# A4: platform annotation coverage + policy, one row per platform table referenced by
+# the catalog.  READ-ONLY against the mirror (SELECT COUNT only; nothing is written or
+# uploaded).
+#
+# Inputs
+#   data/dataset_info.csv            catalog `GPL` column -> the platform list
+#   data/processed/gpl/<PLAT>.rds    local probe -> gene maps (fallback: data/gpl/<PLAT>.rds)
+#   MySQL mirror table <PLAT>        columns: row_names, gene_id
+#
+# Output
+#   data/suppl/platform_annotation_coverage.csv   manuscript-facing copy (--publish)
+#   pipeline/out/platform_annotation_coverage.csv derived copy (always written)
+#   Columns (frozen): GPL, local_map_path, local_probe_rows, local_annotated_rows,
+#     local_gene_coverage_pct, mirror_table_rows, mirror_gene_rows, representation,
+#     divergence, known_gaps, policy
+#
+# Definitions (mechanical, stated once):
+#   local_probe_rows        number of rows (probes) in the local map file
+#   local_annotated_rows    probes with a non-empty gene id (gene_id / ENTREZ_GENE_ID,
+#                           excluding "", "---", "NA")
+#   local_gene_coverage_pct 100 * local_annotated_rows / local_probe_rows
+#   mirror_table_rows       COUNT(*) of the mirror platform table
+#   mirror_gene_rows        COUNT(*) of mirror rows carrying a non-empty gene id
+#   joinable                whether the map probe ids match the row ids of the expression
+#                           tables of the cohorts using that platform (checked on the first
+#                           catalog cohort on the platform that has a local expression table);
+#                           a platform whose ids match nothing cannot be joined by name at all
+#   representation          `expanded` when at least one probe maps to several genes
+#                           separated by " /// " (the mirror stores one row per probe-gene
+#                           pair for those), else `collapsed` (one row per probe)
+#   divergence              local_annotated_rows vs mirror_gene_rows:
+#                           equal -> none | mirror larger -> mirror_newer | local larger -> local_newer
+#                           (NA when the table is not in the mirror at all)
+#   known_gaps              short free text; empty when no gap is recorded
+#   policy                  insufficient-annotation | usable-with-caveat | ok
+#     insufficient-annotation : no local map, or no annotated probe at all, or coverage < 40 %,
+#                               or the map probe ids match no expression table at all
+#     usable-with-caveat      : coverage < 90 %, or divergence != none, or a recorded known_gap
+#     ok                      : coverage >= 90 % and divergence == none and no known_gap
+#
+# Usage
+#   Rscript pipeline/R/117_build_platform_coverage.R [--publish]
+# ----------------------------------------------------------------------------
+root <- path.expand(Sys.getenv("CPAS_DATA_ROOT", unset = "/home/Jingle/data/Project/CPAS"))
+source(file.path(root, "pipeline/R/00_output_root.R"))
+publish <- "--publish" %in% commandArgs(trailingOnly = TRUE)
+suppressPackageStartupMessages(library(RMySQL))
+
+di <- read.csv(cpas_data("dataset_info.csv"), stringsAsFactors = FALSE)
+plats <- sort(unique(trimws(unlist(strsplit(as.character(di$GPL[!is.na(di$GPL)]), "[,;[:space:]]+")))))
+plats <- plats[!is.na(plats) & nzchar(plats)]
+
+con <- dbConnect(MySQL(), host = Sys.getenv("CPAS_DB_HOST", unset = "139.224.80.159"),
+                 dbname = "cpas", user = Sys.getenv("CPAS_DB_USER", unset = "CanPAS"),
+                 password = Sys.getenv("CPAS_DB_PASSWORD"))
+on.exit(dbDisconnect(con), add = TRUE)
+mirror_tabs <- dbListTables(con)
+
+resolve_map <- function(tab) {
+  p1 <- cpas_data("processed", "gpl", paste0(tab, ".rds"))
+  p2 <- cpas_data("gpl", paste0(tab, ".rds"))
+  if (file.exists(p1)) return(p1)
+  if (file.exists(p2)) return(p2)
+  NA_character_
+}
+
+# representative cohort per platform (first catalog row referencing it with a local expr table)
+plats_of_row <- function(g) {
+  x <- trimws(unlist(strsplit(as.character(g), "[,;[:space:]]+")))
+  x[nzchar(x) & !is.na(x)]
+}
+expr_path_of <- function(acc) {
+  for (cand in unique(c(acc, gsub("_", "-", acc, fixed = TRUE), gsub("-", "_", acc, fixed = TRUE)))) {
+    f <- cpas_data("expr", paste0(cand, ".rds"))
+    if (file.exists(f)) return(f)
+  }
+  NA_character_
+}
+expr_ids_cache <- new.env(parent = emptyenv())
+expr_ids_of <- function(acc) {
+  f <- expr_path_of(acc)
+  if (is.na(f)) return(NULL)
+  if (is.null(expr_ids_cache[[f]])) {
+    e <- tryCatch(readRDS(f), error = function(e) NULL)
+    assign(f, if (is.null(e)) character(0)
+              else if ("ID_REF" %in% colnames(e)) as.character(e$ID_REF) else rownames(e),
+           envir = expr_ids_cache)
+  }
+  expr_ids_cache[[f]]
+}
+
+res <- vector("list", length(plats))
+for (i in seq_along(plats)) {
+  tab <- plats[i]
+  mp <- resolve_map(tab)
+  map_rel <- if (is.na(mp)) NA_character_ else sub(paste0("^", root, "/"), "", mp)
+  n_probe <- n_ann <- NA_integer_
+  pct <- NA_real_
+  repr <- NA_character_
+  gap <- character(0)
+  multi <- FALSE
+  numeric_keyed <- FALSE
+  if (!is.na(mp)) {
+    g <- tryCatch(readRDS(mp), error = function(e) NULL)
+    if (!is.null(g)) {
+      rn <- rownames(g)
+      n_probe <- length(rn)
+      gid <- if ("gene_id" %in% names(g)) as.character(g$gene_id) else
+             if ("ENTREZ_GENE_ID" %in% names(g)) as.character(g$ENTREZ_GENE_ID) else
+             rep(NA_character_, n_probe)
+      keep <- !is.na(gid) & gid != "" & gid != "---" & gid != "NA"
+      n_ann <- sum(keep)
+      pct <- if (n_probe > 0) round(100 * n_ann / n_probe, 2) else NA_real_
+      multi <- any(grepl(" /// ", gid[keep], fixed = TRUE))
+      repr <- if (multi) "expanded" else "collapsed"
+      numeric_keyed <- length(rn) > 0 && all(grepl("^[0-9]+$", rn))
+    }
+  }
+  # joinability against a representative cohort's expression row ids
+  join_ok <- NA
+  join_note <- character(0)
+  coh <- as.character(di$Accession[vapply(di$GPL, function(g)
+    !is.na(g) && tab %in% plats_of_row(g), logical(1))])
+  rep_acc <- NA_character_
+  for (a in coh) {
+    ids <- expr_ids_of(a)
+    if (!is.null(ids) && length(ids)) { rep_acc <- a; break }
+  }
+  if (!is.na(mp) && !is.na(rep_acc) && !is.null(g0_probes <- rownames(tryCatch(readRDS(mp), error = function(e) NULL)))) {
+    ids <- expr_ids_of(rep_acc)
+    ov <- length(intersect(as.character(g0_probes), as.character(ids)))
+    join_ok <- ov > 0
+    if (!join_ok)
+      join_note <- sprintf("map probe ids match 0 of the %d row ids of %s (%s)",
+                           length(ids), rep_acc, basename(expr_path_of(rep_acc)))
+  }
+  mtab <- gsub("-", "_", tab, fixed = TRUE)
+  in_mirror <- mtab %in% mirror_tabs
+  m_rows <- m_gene <- NA_integer_
+  if (in_mirror) {
+    m_rows <- dbGetQuery(con, sprintf("SELECT COUNT(*) n FROM `%s`", mtab))$n
+    m_gene <- dbGetQuery(con, sprintf(
+      "SELECT COUNT(*) n FROM `%s` WHERE gene_id IS NOT NULL AND gene_id <> '' AND gene_id <> '---' AND gene_id <> 'NA'",
+      mtab))$n
+  }
+  divergence <- if (!in_mirror) NA_character_
+                else if (is.na(n_ann)) "local_newer"   # mirror row without a local map
+                else if (n_ann == m_gene) "none"
+                else if (m_gene > n_ann) "mirror_newer" else "local_newer"
+  if (is.na(mp)) gap <- c(gap, "no local probe->gene map")
+  if (!in_mirror) gap <- c(gap, "platform table absent from the mirror")
+  if (!is.na(n_ann) && n_ann == 0) gap <- c(gap, "no probe carries a gene id")
+  if (identical(join_ok, FALSE)) gap <- c(gap, join_note)
+  if (!is.na(pct) && pct < 60) gap <- c(gap, sprintf("only %.2f%% of probes carry a gene id", pct))
+  known_gaps <- paste(gap, collapse = "; ")
+  policy <- if (is.na(mp) || is.na(n_ann) || n_ann == 0 || (!is.na(pct) && pct < 40) || identical(join_ok, FALSE))
+    "insufficient-annotation"
+  else if ((!is.na(pct) && pct < 90) || (!is.na(divergence) && divergence != "none") || nzchar(known_gaps))
+    "usable-with-caveat"
+  else "ok"
+  if (identical(tab, "TCGA_HiSeqV2")) {
+    # documented exception: not a probe-level platform; no probe->gene map is needed because
+    # TCGA expression is fetched on demand from UCSC Xena already at gene level.
+    known_gaps <- paste(c(gap[!grepl("absent from the mirror", gap)],
+                          "TCGA expression is fetched on demand from UCSC Xena at gene level, so no local probe->gene map is used"),
+                        collapse = "; ")
+    policy <- "usable-with-caveat"
+  }
+  res[[i]] <- data.frame(GPL = tab, local_map_path = ifelse(is.na(map_rel), "not stated", map_rel),
+                         local_probe_rows = n_probe, local_annotated_rows = n_ann,
+                         local_gene_coverage_pct = pct, mirror_table_rows = m_rows,
+                         mirror_gene_rows = m_gene, representation = ifelse(is.na(repr), "not stated", repr),
+                         divergence = ifelse(is.na(divergence), "not stated", divergence),
+                         known_gaps = known_gaps, policy = policy, stringsAsFactors = FALSE)
+}
+
+out <- do.call(rbind, res)
+write.csv(out, cpas_out("platform_annotation_coverage.csv"), row.names = FALSE)
+if (publish) {
+  dir.create(dirname(cpas_suppl("platform_annotation_coverage.csv")), showWarnings = FALSE, recursive = TRUE)
+  write.csv(out, cpas_suppl("platform_annotation_coverage.csv"), row.names = FALSE)
+  cat("published: data/suppl/platform_annotation_coverage.csv\n")
+}
+
+cat(sprintf("\nplatform tables referenced by the catalog: %d\n\n", nrow(out)))
+hl <- out[order(-out$local_gene_coverage_pct), c("GPL", "local_probe_rows", "local_annotated_rows",
+                                                 "local_gene_coverage_pct", "mirror_table_rows",
+                                                 "mirror_gene_rows", "divergence", "policy")]
+print(hl, row.names = FALSE, digits = 4)
+cat("\npolicy buckets:\n"); print(table(out$policy))
+for (p in c("insufficient-annotation", "usable-with-caveat", "ok"))
+  if (any(out$policy == p)) cat(sprintf("%s: %s\n", p, paste(out$GPL[out$policy == p], collapse = ", ")))
+cat("\ndivergence:\n"); print(table(out$divergence))
+}
