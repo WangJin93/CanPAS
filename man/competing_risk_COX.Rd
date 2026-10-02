@@ -52,9 +52,10 @@ Object of class \code{cpas_competing}: list with
     (\code{"continuous"}, \code{"categorical"} or the text-coercion cases)}
   \item{\code{diagnostics}}{per model, \code{ok} and, when \code{FALSE},
     the reason (non-convergence, separation, infinite coefficient): the
-    affected coefficient is then omitted from the table and a warning is
-    raised, so a meaningless hazard ratio is never reported as a result}
-  \item{\code{fits}}{the two fitted \code{coxph} objects}
+    entire model table is then \code{NULL} and a warning is raised, so no
+    inferential rows are published for a non-estimable model}
+  \item{\code{fits}}{the two fitted \code{coxph} objects, retained for debugging
+    even when diagnostics reject the model; a failed fit is \code{NULL}}
 }
 \description{
 Fits, for the same covariates, (1) the cause-specific Cox model
@@ -78,14 +79,14 @@ be read as a factor with one level per value; \code{competing_risk_COX()}
 restores the evident type, reports it in \code{covariate_types}, and refuses
 (rather than silently reporting) a categorical covariate with more than
 \code{max_levels} levels. Non-convergence, separation and infinite
-coefficients are reported through \code{diagnostics} and excluded from the
-tables.
+coefficients are reported through \code{diagnostics}; the entire affected
+model table is withheld, while its fit is retained for debugging.
 
-The Fine-Gray standard errors are clustered by patient, because
-\code{survival::finegray()} expands every patient who has a competing event
-into several rows; without the cluster term the reported standard error is
-17-23\% too small. The point estimates and the clustered standard errors agree
-with \code{cmprsk::crr()} to within 0.1\%.
+The Fine-Gray standard errors use a patient-clustered sandwich variance to
+account for repeated rows in the \code{survival::finegray()} expansion.
+Point estimates can be compared with \code{cmprsk::crr()} under matching
+censoring and covariate specifications. Variance estimates need not coincide:
+the weighted Cox sandwich and \code{crr()} use different variance procedures.
 }
 \examples{
 \dontrun{
@@ -104,6 +105,6 @@ with \code{cmprsk::crr()} to within 0.1\%.
    cc$covariate_types    # how each covariate was used (continuous / categorical)
    cc$cause_specific     # cause-specific hazard ratios
    cc$subdistribution    # Fine-Gray subdistribution hazard ratios
-   cc$diagnostics        # ok + reason per model; unusable coefficients are omitted
+   cc$diagnostics        # ok + reason per model; rejected tables are NULL
 }
 }

@@ -52,9 +52,9 @@ clearly labelled, in \code{$pooled$pi_alt_lower}/\code{pi_alt_upper} with
 any heterogeneity statistic.}
 
 \item{confounders}{Optional character vector of covariate names to adjust for
-(they must exist in the merged data; the covariates available in each
-cohort are intersected). With the default \code{auto_repair = FALSE} a
-cohort in which a requested covariate is constant is reported as
+(they must exist in the merged data). With the default
+\code{auto_repair = FALSE}, a cohort in which a requested covariate is
+missing or constant is reported as
 \code{not estimable} instead of being adjusted for a reduced covariate set.}
 
 \item{min_events}{Minimum number of events for a cohort to enter (default 5).}

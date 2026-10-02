@@ -31,7 +31,9 @@ or \code{"NNE"}.}
 }
 \value{
 A ggplot object; the estimated AUC is attached as attribute
-\code{"AUC"} of the returned object.
+\code{"AUC"} of the returned object. Attributes \code{"analysis_metadata"},
+\code{"roc_data"} and \code{"manifest"} retain the analysis counts, coordinates
+and provenance. No AUC confidence interval is supplied.
 }
 \description{
 Computes a time-dependent ROC curve at a given prediction horizon with

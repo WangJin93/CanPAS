@@ -8,3 +8,7 @@ Rplots.pdf
 .DS_Store
 src/*.o
 src/*.so
+
+# never commit local credentials (see inst/pipeline/Renviron.example)
+.Renviron
+.Renviron.site
